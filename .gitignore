@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# Model checkpoints (keep logs/figures/configs; pull weights from HPC or HF)
+runs/**/checkpoints/*.pt
+*.pth
+
+# Data (HPC symlink, too large for git)
+data
+data/
+
+# Slurm job outputs (noisy; keep one reference out_sample if useful)
+runs/*_*.out
+runs/*_*.err
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Claude local settings (do not publish)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Recovery-only scratch files (session-specific)
+hpc相关信息供参考.txt
+part1提交.txt
