@@ -10,7 +10,7 @@ same formula train.py uses during validation.
 
 Usage (on a compute node):
     python scripts/self_eval.py \
-        --ckpt runs/cnn_transformer/checkpoints/best.pt \
+        --ckpt runs/cnn_transformer_baseline/checkpoints/best.pt \
         --n_days 2
 """
 
@@ -41,9 +41,9 @@ print("[self_eval] models module ok", flush=True)
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--ckpt", type=str,
-                   default="runs/cnn_transformer/checkpoints/best.pt")
+                   default="runs/cnn_transformer_baseline/checkpoints/best.pt")
     p.add_argument("--norm_stats", type=str,
-                   default="runs/cnn_transformer/norm_stats.pt")
+                   default="runs/cnn_transformer_baseline/norm_stats.pt")
     p.add_argument("--data_root", type=str,
                    default="/cluster/tufts/c26sp1cs0137/data/assignment3_data")
     p.add_argument("--year", type=int, default=2022)
@@ -92,7 +92,7 @@ def main():
     norm_stats = torch.load(norm_path, weights_only=True)
 
     model = create_model(
-        model_args.get("model", "cnn_transformer"),
+        model_args.get("model", "cnn_transformer_baseline"),
         n_weather_channels=7,
         n_zones=N_ZONES,
         cal_dim=44,
@@ -107,7 +107,7 @@ def main():
     model.eval()
 
     n_params = sum(p.numel() for p in model.parameters())
-    print(f"Model     : {model_args.get('model', 'cnn_transformer')} "
+    print(f"Model     : {model_args.get('model', 'cnn_transformer_baseline')} "
           f"({n_params:,} params)")
     print(f"Best val MAPE at ckpt time: "
           f"{ckpt.get('best_val_mape', float('nan')):.2f}%")

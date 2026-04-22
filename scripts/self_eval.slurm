@@ -28,7 +28,7 @@ echo "=========================================="
 python -c 'import torch; print("torch", torch.__version__, "cuda", torch.cuda.is_available())'
 
 python scripts/self_eval.py \
-    --ckpt runs/cnn_transformer/checkpoints/best.pt \
-    --norm_stats runs/cnn_transformer/norm_stats.pt \
+    --ckpt runs/cnn_transformer_baseline/checkpoints/best.pt \
+    --norm_stats runs/cnn_transformer_baseline/norm_stats.pt \
     --n_days "${1:-2}" \
     --device cpu

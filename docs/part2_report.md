@@ -137,7 +137,7 @@ MAPE 始终报**物理空间**的百分比误差，**和作业评测器的定义
 ### 3.4 评测侧：checkpoint 自包含 + wrapper 闭环
 
 - `torch.save(ckpt, ...)` 里带上 `norm_stats` 字段（`training/train.py` 保存时一起存）。
-- [`evaluation/part2-models/pangliu/model.py::EvalWrapper`](../evaluation/part2-models/pangliu/model.py) 从 ckpt 读 stats 注册为 buffer。
+- [`evaluation/part2-encoder-decoder/model.py::EvalWrapper`](../evaluation/part2-encoder-decoder/model.py) 从 ckpt 读 stats 注册为 buffer。
 - `adapt_inputs()` 用这份 stats **归一化** 评测器给的原始输入（MWh 单位的 `history_energy`、原始浮点 `history_weather` 等）。
 - `forward()` 调完 model 得到归一化 prediction → **反归一化回 MWh** → 返回给评测器。
 
@@ -246,7 +246,7 @@ _填入 `runs/cnn_encoder_decoder/figures/training_curves.png`。_
 ## 6. 提交
 
 - **Canonical 位置**：`/cluster/tufts/c26sp1cs0137/data/assignment3_data/evaluation/part2-models/pangliu/`
-- **内容**：`model.py`（此仓库 `evaluation/part2-models/pangliu/model.py`）+ `best.pt`（训练产出）+ `config.json`（训练产出）+ `models/__init__.py` + `models/cnn_encoder_decoder.py` + `models/cnn_transformer.py`（被 import）
+- **内容**：`model.py`（此仓库 `evaluation/part2-encoder-decoder/model.py`）+ `best.pt`（训练产出）+ `config.json`（训练产出）+ `models/__init__.py` + `models/cnn_encoder_decoder.py` + `models/cnn_transformer_baseline.py`（被 import）
 - **Self-test**：`sbatch scripts/self_eval.slurm part2-models/pangliu 2`（`self_eval.py` 已经 model-agnostic，从 ckpt args 里自动解析 model 名）。
 
 ## 7. 局限与后续

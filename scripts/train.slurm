@@ -23,11 +23,11 @@ cd /cluster/tufts/c26sp1cs0137/pliu07/assignment3
 EXTRA_ARGS="${@}"
 
 echo "=========================================="
-echo "Model: cnn_transformer"
+echo "Model: cnn_transformer_baseline"
 echo "Extra args: $EXTRA_ARGS"
 echo "Node: $(hostname)"
 echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
 echo "Date: $(date)"
 echo "=========================================="
 
-python training/train.py --model cnn_transformer $EXTRA_ARGS
+python training/train.py --model cnn_transformer_baseline $EXTRA_ARGS

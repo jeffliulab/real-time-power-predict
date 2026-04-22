@@ -14,7 +14,7 @@ Interface required by evaluate.py:
 
     forward(*adapt_inputs(...)) -> (B, 24, n_zones) float32 in MWh
 
-Mirrors evaluation/pangliu/model.py (Part 1 wrapper); only the model
+Mirrors evaluation/part1-baseline/model.py (Part 1 wrapper); only the model
 class and a few config keys differ.
 """
 
@@ -27,7 +27,7 @@ import torch.nn as nn
 from pathlib import Path
 
 EVAL_DIR = Path(__file__).parent
-ROOT = EVAL_DIR.parent.parent.parent  # project root on HPC: .../pliu07/assignment3
+ROOT = EVAL_DIR.parent.parent  # project root on HPC: .../pliu07/assignment3
 
 sys.path.insert(0, str(ROOT))
 

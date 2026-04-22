@@ -2,8 +2,8 @@
 Training script for energy demand forecasting models.
 
 Usage:
-    python training/train.py --model cnn_transformer --epochs 30 --batch_size 4
-    python training/train.py --model cnn_transformer --history_len 48 --grid_size 6
+    python training/train.py --model cnn_transformer_baseline --epochs 30 --batch_size 4
+    python training/train.py --model cnn_transformer_baseline --history_len 48 --grid_size 6
 """
 
 import argparse
@@ -13,7 +13,15 @@ import os
 import time
 from pathlib import Path
 
+import os
 import torch
+# Disable cuDNN when env var set — Tufts HPC's cuDNN (both their modules and
+# torch's bundled one) has symbol/engine issues with torch 2.3.1+cu121 on
+# A100 nodes, causing loss.backward() to fail. Disabling falls back to
+# native CUDA kernels. Slower (~1.5x) but reliable.
+if os.environ.get("DISABLE_CUDNN", "0") == "1":
+    torch.backends.cudnn.enabled = False
+    print("NOTE: cuDNN disabled via DISABLE_CUDNN=1", flush=True)
 import torch.nn as nn
 import numpy as np
 import matplotlib
@@ -29,7 +37,7 @@ from models import create_model, get_model_defaults, MODEL_REGISTRY
 def parse_args():
     parser = argparse.ArgumentParser(description="Train energy forecasting model")
 
-    parser.add_argument("--model", type=str, default="cnn_transformer",
+    parser.add_argument("--model", type=str, default="cnn_transformer_baseline",
                         choices=list(MODEL_REGISTRY.keys()))
     parser.add_argument("--data_root", type=str,
                         default="/cluster/tufts/c26sp1cs0137/data/assignment3_data")

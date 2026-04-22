@@ -59,10 +59,10 @@ Current state of `part1-models/`:
 | `eric_hunter/` | ezhao05 | best_model.pt, model.py (self-contained) |
 | `logan_odalys_matthew/` | lyuan04 | best_model.pth, model.py |
 | `nsp/` | nchang06 | checkpoints/, model.py |
-| `pangliu/` | **pliu07 (this repo)** | best.pt, config.json, model.py, models/__init__.py, models/cnn_transformer.py |
+| `pangliu/` | **pliu07 (this repo)** | best.pt, config.json, model.py, models/__init__.py, models/cnn_transformer_baseline.py |
 | `smna/` | smalla01 | best.pt, model.py, test_run log |
 
-Submission content conventions vary — weights are named `best.pt` / `best_model.pt` / `best_weights.pt` / `best_model.pth`, but `model.py` is always present at the top of the folder. The `model.py` can either bundle its architecture in-line (most teams) or import from a sibling `models/` package inside the submission folder (our approach: [../evaluation/pangliu/model.py](../evaluation/pangliu/model.py)).
+Submission content conventions vary — weights are named `best.pt` / `best_model.pt` / `best_weights.pt` / `best_model.pth`, but `model.py` is always present at the top of the folder. The `model.py` can either bundle its architecture in-line (most teams) or import from a sibling `models/` package inside the submission folder (our approach: [../evaluation/part1-baseline/model.py](../evaluation/part1-baseline/model.py)).
 
 ## Other folders at the top of `evaluation/`
 

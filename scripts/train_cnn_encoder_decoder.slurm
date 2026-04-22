@@ -3,7 +3,8 @@
 #SBATCH -t 0-24:00:00
 #SBATCH --mem=48G
 #SBATCH -p gpu
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:a100:1
+#SBATCH --constraint=a100
 #SBATCH -o runs/%x_%j.out
 #SBATCH -e runs/%x_%j.err
 #SBATCH -J cnn_encdec
@@ -19,10 +20,15 @@
 #   3 encoder + 1 decoder           ≈ 1.82 M (essentially parity)
 # To adjust: pass e.g. `--n_encoder_layers 3 --n_decoder_layers 1` as extra args.
 
-# Course modules (class/default, cs137/2026spring) removed cluster-wide
-# as of 2026-04-21. Fall back to the Tufts-AI anaconda that ships torch
-# 2.3.1+cu121 (verified CUDA ops work on gpu partition via cuda_probe).
-module load anaconda/2023.07.tuftsai
+# Use our persistent conda env directly — do NOT load anaconda/2023.07.tuftsai
+# first, as that module injects paths into LD_LIBRARY_PATH that contaminate
+# our env's bundled CUDA/cuDNN libraries (causes segfault at first epoch).
+# Use the env's Python binary directly; it already has everything bundled.
+ENV_PATH=/cluster/tufts/c26sp1cs0137/pliu07/conda_envs/cs137
+export PATH="$ENV_PATH/bin:$PATH"
+# Prepend the env's lib dir for any dynamic loads (torch's bundled CUDA libs
+# live in site-packages/nvidia/*/lib; torch resolves those itself).
+unset LD_LIBRARY_PATH  # drop any inherited Tufts-AI paths
 
 export PYTHONUNBUFFERED=1
 

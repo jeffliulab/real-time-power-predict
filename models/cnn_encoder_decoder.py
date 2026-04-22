@@ -21,7 +21,7 @@ loader and training loop are reused verbatim.
 import torch
 import torch.nn as nn
 
-from .cnn_transformer import ResBlock2d, WeatherCNN, EnergyTransformerBlock
+from .cnn_transformer_baseline import ResBlock2d, WeatherCNN, EnergyTransformerBlock
 
 
 class CrossAttentionBlock(nn.Module):

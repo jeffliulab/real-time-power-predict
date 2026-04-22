@@ -95,7 +95,7 @@ class EnergyTransformerBlock(nn.Module):
         return x
 
 
-class CNNTransformerForecaster(nn.Module):
+class CNNTransformerBaselineForecaster(nn.Module):
     """
     Hybrid CNN-Transformer for day-ahead energy demand forecasting.
 

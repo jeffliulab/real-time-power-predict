@@ -30,7 +30,7 @@ ROOT = EVAL_DIR.parent.parent  # assignment3 project root on cluster
 # is at a separate path. We add it so models/ can be imported.
 sys.path.insert(0, str(ROOT))
 
-from models.cnn_transformer import CNNTransformerForecaster
+from models.cnn_transformer_baseline import CNNTransformerBaselineForecaster
 
 CHECKPOINT_PATH = EVAL_DIR / "best.pt"
 CONFIG_PATH = EVAL_DIR / "config.json"
@@ -206,7 +206,7 @@ def get_model(metadata):
         n_heads = 4
         dropout = 0.1
 
-    model = CNNTransformerForecaster(
+    model = CNNTransformerBaselineForecaster(
         n_weather_channels=n_weather_vars,
         n_zones=n_zones,
         cal_dim=CAL_DIM,

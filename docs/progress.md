@@ -15,11 +15,11 @@ Snapshot: 2026-04-22 (Part 2 due today EOD; 9 days before final due 2026-05-01)
 - Canonical submission: `/cluster/tufts/c26sp1cs0137/data/assignment3_data/evaluation/part1-models/pangliu/`. Old `evaluation/pliu07/` cleaned up.
 
 ### Artifacts
-- `models/cnn_transformer.py`, `models/__init__.py`
+- `models/cnn_transformer_baseline.py`, `models/__init__.py`
 - `training/train.py`, `training/data_preparation/dataset.py`
-- `evaluation/pangliu/model.py` (Part 1 eval wrapper)
-- `runs/cnn_transformer/{config.json, norm_stats.pt, logs/training_log.csv, figures/training_curves.png}`
-- `runs/cnn_transformer/checkpoints/{best.pt, latest.pt}` (21 MB each, gitignored; present locally)
+- `evaluation/part1-baseline/model.py` (Part 1 eval wrapper; copied to HPC `evaluation/part1-models/pangliu/` for grading)
+- `runs/cnn_transformer_baseline/{config.json, norm_stats.pt, logs/training_log.csv, figures/training_curves.png}`
+- `runs/cnn_transformer_baseline/checkpoints/{best.pt, latest.pt}` (21 MB each, gitignored; present locally)
 - `scripts/train.slurm` (original trainer), `scripts/self_eval.py` + `scripts/self_eval.slurm` (our own evaluator, model-agnostic)
 
 ---
@@ -45,7 +45,7 @@ Full technical report: [docs/part2_report.md](part2_report.md).
 - [x] Register in `models/__init__.py` as `cnn_encoder_decoder`
 - [x] Extend `training/train.py` with `--n_encoder_layers`, `--n_decoder_layers`, `--use_future_weather_xattn`, `--warmup_steps` flags + 500-step linear LR warmup logic
 - [x] Write `scripts/train_cnn_encoder_decoder.slurm` (18 epoch, A100-gpu partition, 24 h)
-- [x] Write `evaluation/part2-models/pangliu/model.py` (eval wrapper, mirrors Part 1)
+- [x] Write `evaluation/part2-encoder-decoder/model.py` (eval wrapper, mirrors Part 1; copied to HPC `evaluation/part2-models/pangliu/` for grading)
 - [x] Draft `docs/part2_report.md` (architecture, normalization pipeline, rationale, references, result table skeleton)
 - [x] AST syntax-check all modified Python files
 - [x] Rsync project to HPC (`/cluster/.../pliu07/assignment3/`)

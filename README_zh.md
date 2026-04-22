@@ -39,7 +39,7 @@
 
 | 部分 | 分数 | 截止 | 状态 |
 |---|---|---|---|
-| Part 1 — baseline CNN-Transformer patch 架构 | 40 | 4/15 | ✅ 已提交，2022 年末 2 天切片测试 MAPE **5.24 %**，独立验证通过（[runs/cnn_transformer/](runs/cnn_transformer/)）|
+| Part 1 — baseline CNN-Transformer patch 架构 | 40 | 4/15 | ✅ 已提交，2022 年末 2 天切片测试 MAPE **5.24 %**，独立验证通过（[runs/cnn_transformer_baseline/](runs/cnn_transformer_baseline/)）|
 | Part 2 — 超越 baseline 的架构搜索 | 30 | **4/22** | 🚂 训练中：`cnn_encoder_decoder`（编码器-解码器 + cross-attention，详见 [docs/part2_report.md](docs/part2_report.md)）on Tufts HPC（job 36620892，18 epochs，A100）|
 | Part 3 — 模型诊断 OR 独立研究 | 30 | 5/1 | ⏳ 未开始（初步方案：Track A 地理注意力图）|
 | 报告 + 展示 | — | 5/1 / 5/4 | ⏳ 未开始 |
@@ -59,7 +59,7 @@
 5. **Transformer encoder** — pre-norm，4 层，4 头，GELU MLP。
 6. **预测头** — 取 24 个未来表格 token → `MLP(D → D/2 → 8)`。
 
-源码：[models/cnn_transformer.py](models/cnn_transformer.py)
+源码：[models/cnn_transformer_baseline.py](models/cnn_transformer_baseline.py)
 
 ### 训练配置
 
@@ -75,7 +75,7 @@
 
 ### 训练曲线
 
-![training curves](runs/cnn_transformer/figures/training_curves.png)
+![training curves](runs/cnn_transformer_baseline/figures/training_curves.png)
 
 本地 2021 验证最好 val MAPE 6.92%（epoch 12）。课程 held-out 评测脚本在 2022 年末 2 天上测到 5.24%。
 
@@ -94,18 +94,18 @@ real-time-power-predict/
 │   └── hpc-evaluation-structure.md  # HPC /cluster/.../evaluation/ 目录说明
 ├── models/
 │   ├── __init__.py                  # Model registry（create_model、MODEL_DEFAULTS）
-│   ├── cnn_transformer.py           # Part 1 baseline（encoder-only，1.75M 参数）
+│   ├── cnn_transformer_baseline.py  # Part 1 baseline（encoder-only，1.75M 参数）
 │   └── cnn_encoder_decoder.py       # Part 2 encoder-decoder（~2.29M 参数）
 ├── training/
 │   ├── train.py                     # 训练入口（两种模型共用）
 │   └── data_preparation/dataset.py  # 数据集 + LRU 天气缓存 + z-score 归一化
 ├── evaluation/
-│   ├── pangliu/                     # Part 1 评测 wrapper（canonical Part 1 提交）
+│   ├── part1-baseline/              # Part 1 评测 wrapper（→ HPC part1-models/pangliu/）
 │   │   └── model.py
-│   └── part2-models/pangliu/        # Part 2 评测 wrapper（canonical Part 2 提交）
+│   └── part2-encoder-decoder/       # Part 2 评测 wrapper（→ HPC part2-models/pangliu/）
 │       └── model.py
 ├── runs/
-│   ├── cnn_transformer/             # Part 1 产出
+│   ├── cnn_transformer_baseline/    # Part 1 产出
 │   └── cnn_encoder_decoder/         # Part 2 产出（训练完后）
 │       ├── config.json
 │       ├── norm_stats.pt
@@ -165,7 +165,7 @@ sbatch -J part1-models/pangliu test_run.sh 2   # 2 = 测试天数
 | 电量 CSV | 8 个 zone，逐时 MWh | 2019–2023，UTC 时区 |
 | Held-out 测试集 | 同上 | 2024 |
 
-时间戳全部对齐到 UTC 以避免夏令时/数据源时区漂移。用训练集里随机 500 个样本估 z-score 统计量做标准化（缓存在 `runs/cnn_transformer/norm_stats.pt`）。
+时间戳全部对齐到 UTC 以避免夏令时/数据源时区漂移。用训练集里随机 500 个样本估 z-score 统计量做标准化（缓存在 `runs/cnn_transformer_baseline/norm_stats.pt`）。
 
 ---
 

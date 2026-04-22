@@ -39,7 +39,7 @@ See [docs/assignment.pdf](docs/assignment.pdf) for the full spec.
 
 | Part | Weight | Due | Status |
 |---|---|---|---|
-| Part 1 — Baseline CNN-Transformer patch architecture | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %** on 2 days of 2022, independently verified ([runs/cnn_transformer/](runs/cnn_transformer/)) |
+| Part 1 — Baseline CNN-Transformer patch architecture | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %** on 2 days of 2022, independently verified ([runs/cnn_transformer_baseline/](runs/cnn_transformer_baseline/)) |
 | Part 2 — Architecture search (beat the baseline) | 30 | **Apr 22** | 🚂 Training: `cnn_encoder_decoder` w/ cross-attention ([docs/part2_report.md](docs/part2_report.md)) on Tufts HPC (job 36620892, 18 epochs, A100) |
 | Part 3 — Model diagnosis OR independent study | 30 | May 1 | ⏳ Not started (preliminary plan: Track A — geographic attention maps) |
 | Report + presentation | — | May 1 / May 4 | ⏳ Not started |
@@ -59,7 +59,7 @@ Architecture follows the assignment spec (Figure 2):
 5. **Transformer encoder** — pre-norm, 4 layers, 4 heads, GELU MLP.
 6. **Prediction** — slice the 24 future tabular tokens → `MLP(D → D/2 → 8)`.
 
-Source: [models/cnn_transformer.py](models/cnn_transformer.py).
+Source: [models/cnn_transformer_baseline.py](models/cnn_transformer_baseline.py).
 
 ### Training configuration
 
@@ -75,7 +75,7 @@ Source: [models/cnn_transformer.py](models/cnn_transformer.py).
 
 ### Training curve
 
-![training curves](runs/cnn_transformer/figures/training_curves.png)
+![training curves](runs/cnn_transformer_baseline/figures/training_curves.png)
 
 Best val MAPE 6.92 % at epoch 12 (local val on 2021). Held-out test MAPE 5.24 % on the final 2 days of 2022 via the course evaluation harness.
 
@@ -94,18 +94,18 @@ real-time-power-predict/
 │   └── hpc-evaluation-structure.md  # Layout of /cluster/.../evaluation/ on HPC
 ├── models/
 │   ├── __init__.py                  # Model registry (create_model, MODEL_DEFAULTS)
-│   ├── cnn_transformer.py           # Part 1 baseline (encoder-only, 1.75M)
+│   ├── cnn_transformer_baseline.py  # Part 1 baseline (encoder-only, 1.75M)
 │   └── cnn_encoder_decoder.py       # Part 2 encoder-decoder (~2.29M)
 ├── training/
 │   ├── train.py                     # Training entry point (shared by both models)
 │   └── data_preparation/dataset.py  # Dataset with LRU weather cache + z-score norm
 ├── evaluation/
-│   ├── pangliu/                     # Part 1 eval wrapper (canonical Part 1 submission)
+│   ├── part1-baseline/              # Part 1 eval wrapper (→ HPC part1-models/pangliu/)
 │   │   └── model.py
-│   └── part2-models/pangliu/        # Part 2 eval wrapper (canonical Part 2 submission)
+│   └── part2-encoder-decoder/       # Part 2 eval wrapper (→ HPC part2-models/pangliu/)
 │       └── model.py
 ├── runs/
-│   ├── cnn_transformer/             # Part 1 artifacts
+│   ├── cnn_transformer_baseline/    # Part 1 artifacts
 │   └── cnn_encoder_decoder/         # Part 2 artifacts (after training)
 │       ├── config.json
 │       ├── norm_stats.pt
@@ -165,7 +165,7 @@ All data lives on the Tufts HPC at `/cluster/tufts/c26sp1cs0137/data/assignment3
 | Energy demand CSVs | 8 zones, hourly MWh | 2019–2023, UTC |
 | Test set (held-out) | same format | 2024 |
 
-All timestamps are aligned in UTC to match the meteorological inputs. We z-score-normalize weather and energy inputs using statistics from 500 random training samples (cached in `runs/cnn_transformer/norm_stats.pt`).
+All timestamps are aligned in UTC to match the meteorological inputs. We z-score-normalize weather and energy inputs using statistics from 500 random training samples (cached in `runs/cnn_transformer_baseline/norm_stats.pt`).
 
 ---
 
