@@ -19,12 +19,18 @@
 #   3 encoder + 1 decoder           ≈ 1.82 M (essentially parity)
 # To adjust: pass e.g. `--n_encoder_layers 3 --n_decoder_layers 1` as extra args.
 
-module load class/default
-module load cs137/2026spring
+# Course modules (class/default, cs137/2026spring) removed cluster-wide
+# as of 2026-04-21. Fall back to the Tufts-AI anaconda that ships torch
+# 2.3.1+cu121 (verified CUDA ops work on gpu partition via cuda_probe).
+module load anaconda/2023.07.tuftsai
 
 export PYTHONUNBUFFERED=1
 
 cd /cluster/tufts/c26sp1cs0137/pliu07/assignment3
+# Ensure the project root is on sys.path so `from training...` and
+# `from models...` imports resolve. The cs137/2026spring module used
+# to handle this, but it's gone from the cluster as of 2026-04-21.
+export PYTHONPATH="$PWD:$PYTHONPATH"
 
 EXTRA_ARGS="${@}"
 

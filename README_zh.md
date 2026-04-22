@@ -40,7 +40,7 @@
 | 部分 | 分数 | 截止 | 状态 |
 |---|---|---|---|
 | Part 1 — baseline CNN-Transformer patch 架构 | 40 | 4/15 | ✅ 已提交，2022 年末 2 天切片测试 MAPE **5.24 %**，独立验证通过（[runs/cnn_transformer/](runs/cnn_transformer/)）|
-| Part 2 — 超越 baseline 的架构搜索 | 30 | **4/22** | 🔨 代码就绪：`cnn_encoder_decoder`（编码器-解码器 + cross-attention，详见 [docs/part2_report.md](docs/part2_report.md)），待 HPC 训练 |
+| Part 2 — 超越 baseline 的架构搜索 | 30 | **4/22** | 🚂 训练中：`cnn_encoder_decoder`（编码器-解码器 + cross-attention，详见 [docs/part2_report.md](docs/part2_report.md)）on Tufts HPC（job 36620892，18 epochs，A100）|
 | Part 3 — 模型诊断 OR 独立研究 | 30 | 5/1 | ⏳ 未开始（初步方案：Track A 地理注意力图）|
 | 报告 + 展示 | — | 5/1 / 5/4 | ⏳ 未开始 |
 
@@ -85,32 +85,40 @@
 
 ```
 real-time-power-predict/
-├── README.md                        # 本文件（英文）
-├── README_zh.md                     # 中文版
+├── README.md / README_zh.md         # 英文 / 中文总览
 ├── .gitignore
 ├── docs/
-│   ├── assignment.pdf               # 课程作业说明
-│   ├── progress.md                  # 当前进度与剩余工作
-│   └── hpc-evaluation-structure.md  # HPC 评测目录说明
+│   ├── assignment.pdf               # 作业说明
+│   ├── progress.md                  # 工作计划与进度（事实源）
+│   ├── part2_report.md              # Part 2 技术报告
+│   └── hpc-evaluation-structure.md  # HPC /cluster/.../evaluation/ 目录说明
 ├── models/
-│   ├── __init__.py                  # 模型注册表
-│   └── cnn_transformer.py           # Part 1 baseline
+│   ├── __init__.py                  # Model registry（create_model、MODEL_DEFAULTS）
+│   ├── cnn_transformer.py           # Part 1 baseline（encoder-only，1.75M 参数）
+│   └── cnn_encoder_decoder.py       # Part 2 encoder-decoder（~2.29M 参数）
 ├── training/
-│   ├── train.py                     # 训练入口
-│   └── data_preparation/
-│       └── dataset.py               # 数据集 + LRU 天气缓存
+│   ├── train.py                     # 训练入口（两种模型共用）
+│   └── data_preparation/dataset.py  # 数据集 + LRU 天气缓存 + z-score 归一化
 ├── evaluation/
-│   └── pangliu/                     # 课程评测 wrapper（get_model + adapt_inputs）
+│   ├── pangliu/                     # Part 1 评测 wrapper（canonical Part 1 提交）
+│   │   └── model.py
+│   └── part2-models/pangliu/        # Part 2 评测 wrapper（canonical Part 2 提交）
 │       └── model.py
 ├── runs/
-│   └── cnn_transformer/             # Part 1 产出
+│   ├── cnn_transformer/             # Part 1 产出
+│   └── cnn_encoder_decoder/         # Part 2 产出（训练完后）
 │       ├── config.json
 │       ├── norm_stats.pt
 │       ├── logs/training_log.csv
 │       └── figures/training_curves.png
-│       # checkpoint（best.pt, latest.pt）没入 git，按需从 HPC 拉回
+│       # checkpoint 进 gitignore，按需从 HPC rsync
 └── scripts/
-    └── train.slurm                  # Tufts HPC gpu 分区 SLURM 脚本
+    ├── train.slurm                          # Part 1 训练 SLURM
+    ├── train_cnn_encoder_decoder.slurm      # Part 2 训练 SLURM（18 ep，24 h）
+    ├── self_eval.py + self_eval.slurm       # 我们自己写的模型无关评测器
+    ├── self_test.slurm                      # TA test_run.sh 的 GPU 分区 wrapper
+    ├── smoke_test.slurm                     # 参数量 + 前向 smoke test
+    └── cuda_probe.slurm                     # module 组合 + GPU 兼容性探针
 ```
 
 ---

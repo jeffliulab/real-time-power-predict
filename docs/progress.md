@@ -46,20 +46,23 @@ Full technical report: [docs/part2_report.md](part2_report.md).
 - [x] Extend `training/train.py` with `--n_encoder_layers`, `--n_decoder_layers`, `--use_future_weather_xattn`, `--warmup_steps` flags + 500-step linear LR warmup logic
 - [x] Write `scripts/train_cnn_encoder_decoder.slurm` (18 epoch, A100-gpu partition, 24 h)
 - [x] Write `evaluation/part2-models/pangliu/model.py` (eval wrapper, mirrors Part 1)
-- [x] Draft `docs/part2_report.md` (architecture, rationale, references, result table skeleton)
+- [x] Draft `docs/part2_report.md` (architecture, normalization pipeline, rationale, references, result table skeleton)
 - [x] AST syntax-check all modified Python files
-- [ ] **HPC smoke test** — confirm param count (estimated ~2.28 M for default 4+2 layers; tune down to 3+1 ≈ 1.82 M if we want parameter parity with baseline 1.75 M)
-- [ ] **HPC training** — `sbatch scripts/train_cnn_encoder_decoder.slurm` once HPC is reachable
+- [x] Rsync project to HPC (`/cluster/.../pliu07/assignment3/`)
+- [x] **HPC smoke test** (job 36620794) — param counts confirmed: 4+2=2.29M, 3+2=2.09M, 3+1=1.82M; forward-pass OK
+- [x] **CUDA compatibility probe** (job 36620816) — `anaconda/2023.07.tuftsai` module works on gpu partition with `torch 2.3.1+cu121` (since `class/default`/`cs137/2026spring` modules are removed cluster-wide as of 2026-04-21)
+- [x] Fix `PYTHONPATH` issue in SLURM script (job 36620827 had failed with `ModuleNotFoundError: No module named 'training'`)
+- [🚂] **HPC training in progress** — `sbatch` job 36620892, default 4+2 config (2.29M params), 18 epochs target, patience 5
 - [ ] Rsync results back, regenerate training curve
-- [ ] Copy `best.pt` + `config.json` to canonical `evaluation/part2-models/pangliu/`
+- [ ] Copy `best.pt` + `config.json` to canonical HPC `evaluation/part2-models/pangliu/`
 - [ ] Self-eval: `sbatch scripts/self_eval.slurm part2-models/pangliu 2`; confirm MAPE < 5.24 %
-- [ ] Fill in result numbers in `docs/part2_report.md`
+- [ ] Fill in result numbers in `docs/part2_report.md` §5
 - [ ] Git commit + push new artifacts (gitignored: checkpoints)
 
-### Open questions / decision points (resolve tomorrow on HPC)
+### Open questions / decision points
 
-1. **Parameter budget.** 4 encoder + 2 decoder ≈ 2.28 M (30 % heavier than baseline). If we want strict parity, drop to 3 enc + 1 dec ≈ 1.82 M. Current SLURM defaults to 4+2; switching is 2 CLI flags. Recommendation: run 4+2 first, then narrate honestly in report.
-2. **Future-weather cross-attention.** Off by default; turn on via `--use_future_weather_xattn` if v1 headroom suggests CT / NEMA_BOST need more signal.
+1. **Parameter budget chosen.** Running 4 encoder + 2 decoder (~2.29 M, 30 % heavier than baseline 1.75 M). Rationale: architecture search legitimately allows param changes, and the full encoder-decoder gives the design its best shot. Report will note the gap honestly.
+2. **Future-weather cross-attention.** Off for v1. Enable via `--use_future_weather_xattn` only if MAPE gap on CT / NEMA_BOST suggests missing future-weather signal.
 3. **Resume vs rerun** if SLURM cuts off before 18 epochs — `--resume` flag already present from Part 1.
 
 ---
@@ -107,7 +110,7 @@ Tight coupling to Part 1 / Part 2 models — both use `nn.MultiheadAttention` wh
 | Date | Target |
 |---|---|
 | 2026-04-21 | ✅ Recovery complete. ✅ Part 1 independently verified. ✅ Part 2 code written. |
-| 2026-04-22 | ⏰ **Part 2 deadline EOD.** Morning: HPC smoke test + sbatch training. Afternoon/evening: eval, report numbers, git push, submit. |
+| 2026-04-22 | ⏰ **Part 2 deadline EOD.** ✅ Smoke test + CUDA probe + SLURM fixes. 🚂 Training running (job 36620892). Evening: eval, report numbers, submit. |
 | 2026-04-23 – 2026-04-27 | Part 3 Track A implementation + figures. Refine Part 2 if needed. |
 | 2026-04-28 – 2026-04-30 | Write final report + slides. |
 | 2026-05-01 | ⏰ Final code + report due EOD. |
@@ -117,6 +120,8 @@ Tight coupling to Part 1 / Part 2 models — both use `nn.MultiheadAttention` wh
 ## Known risks / blockers
 
 - **24 h SLURM wall time.** Baseline did 14 epochs; encoder-decoder's encoder is ~4× cheaper per layer, so 18 epochs should fit. `--patience 5` set as a safety net. `--resume` available if needed.
-- **Course modules (`class/default`, `cs137/2026spring`) missing cluster-wide as of 2026-04-21.** Breaks TA's `test_run.sh` on batch partition. Workaround: we have our own `scripts/self_eval.py` / `scripts/self_eval.slurm` that uses the `anaconda/2023.07.tuftsai` module on gpu partition with `--device cpu` (CUDA library mismatch on node). Part 1 verified through this path; Part 2 will use the same.
-- **HPC connectivity intermittent tonight.** Deferring all HPC operations to tomorrow morning. All local code is ready and pushed to GitHub.
+- **Course modules (`class/default`, `cs137/2026spring`) missing cluster-wide (status as of 2026-04-22 PM: still missing).** Workarounds applied in every HPC script:
+  - Evaluator: `scripts/self_eval.slurm` uses `anaconda/2023.07.tuftsai` on gpu partition with `--device cpu`.
+  - Training: `scripts/train_cnn_encoder_decoder.slurm` uses `anaconda/2023.07.tuftsai` + `export PYTHONPATH=$PWD` (the cs137 module used to set PYTHONPATH for us).
+  - CUDA ops confirmed working via `cuda_probe.slurm` (job 36620816) — `torch 2.3.1+cu121` + A100 80GB runs matmul successfully.
 - **Solo submission, no peer review.** Budget 1 day at the end to re-read spec before final submit.

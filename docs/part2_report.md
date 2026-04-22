@@ -96,7 +96,62 @@ Part 2 的目标：提出并训练一个**编码器-解码器架构**（`cnn_enc
 1. **加入 warmup**：decoder 的 cross-attention 在训练早期很容易往奇怪方向拉；500 步线性 warmup 是 Transformer 经典做法，DETR 用 ~1000 步，我们 500 步是权衡。
 2. **Train/val 切分**：Baseline 用 2019-2020 训、2021 验。现在拓展到 2019-2020-2021 训、2022 验。TA 测试集是 2022 末 2 天 — 所以验证集和测试集在同年但不同时段，是稍微更接近"真实部署"的切分。
 
-## 3. 理论基础与参考文献
+## 3. 数据预处理与归一化
+
+归一化是让 MAPE 结果可信、让"超越 baseline"的主张有意义的核心工程环节。**Part 2 沿用 Part 1 的归一化路径不作任何修改** — 这是 baseline 与新架构公平对比的前提。整条链路分 4 步：
+
+### 3.1 归一化统计量（一次计算、缓存复用）
+
+[`training/data_preparation/dataset.py::compute_norm_stats`](../training/data_preparation/dataset.py)：
+- 从**训练集**随机抽 500 个样本（seed 固定 = 42）。
+- 天气 per-channel z-score：`weather_mean/std` shape `(1,1,1,7)` — 对 `(T, H, W, C)` 的 `T×H×W` 维度广播。
+- 电量 per-zone z-score：`energy_mean/std` shape `(1,8)` — 对 `(T, n_zones)` 的 `T` 维度广播。
+- 日历特征（44-d one-hot + holiday flag）**不归一化**，本身量级合理。
+- 统计量缓存在 `runs/<model>/norm_stats.pt`，train 和 val 共用同一份 — **避免数据泄漏**（不用 val 数据算 stats）、**避免分布漂移**（train/val 在同一坐标系）。
+
+### 3.2 训练侧：输入 + 目标都归一化
+
+[`training/data_preparation/dataset.py::__getitem__`](../training/data_preparation/dataset.py)：
+
+```python
+hist_weather  = (hist_weather  - weather_mean) / (weather_std + 1e-7)
+future_weather = (future_weather - weather_mean) / (weather_std + 1e-7)
+hist_energy   = (hist_energy  - energy_mean) / (energy_std + 1e-7)
+target_energy = (target_energy - energy_mean) / (energy_std + 1e-7)   # ← 关键
+```
+
+**target 也归一化**，所以 MSE loss 在 z-score 空间计算，梯度数值稳定。如果 loss 直接跑 MWh 物理空间，量级到 10⁶，梯度爆炸风险大。
+
+### 3.3 验证/训练侧：MAPE 反归一化
+
+[`training/train.py::compute_mape`](../training/train.py)：
+
+```python
+preds_real   = preds   * energy_std + energy_mean      # 反 z-score → MWh
+targets_real = targets * energy_std + energy_mean
+# 然后在 preds_real / targets_real 上算 MAPE
+```
+
+MAPE 始终报**物理空间**的百分比误差，**和作业评测器的定义完全一致**（assignment spec 要求 real-MWh 空间的 MAPE）。
+
+### 3.4 评测侧：checkpoint 自包含 + wrapper 闭环
+
+- `torch.save(ckpt, ...)` 里带上 `norm_stats` 字段（`training/train.py` 保存时一起存）。
+- [`evaluation/part2-models/pangliu/model.py::EvalWrapper`](../evaluation/part2-models/pangliu/model.py) 从 ckpt 读 stats 注册为 buffer。
+- `adapt_inputs()` 用这份 stats **归一化** 评测器给的原始输入（MWh 单位的 `history_energy`、原始浮点 `history_weather` 等）。
+- `forward()` 调完 model 得到归一化 prediction → **反归一化回 MWh** → 返回给评测器。
+
+评测器在物理空间算 MAPE，和训练 `compute_mape` 用的是同一个坐标系 → 训练曲线上的 val MAPE 数字和 TA 评测器报的 test MAPE 数字**量级和口径一致**（Part 1 val 6.92 % / test 5.24 % 的关系就是这样出来的）。
+
+### 3.5 为什么这对 Part 2 的公平对比很重要
+
+Baseline 和 encoder-decoder 用的是：
+- 同一份 `norm_stats.pt`（从 Part 2 训练集重算即可，因为 train 年份扩成了 2019-2020-2021，统计量会微调但方法一致）。
+- 同一套 `EnergyForecastDataset`、同一个 `compute_mape` 函数、同一个评测器接口。
+
+如果 baseline 和 new model 用不同归一化方案（例如一个用 min-max 一个用 z-score），"5.24 % → X %" 的比较就没意义。**归一化对齐是"Part 2 超越 baseline"这一主张可信的前提。**
+
+## 4. 理论基础与参考文献
 
 ### 3.1 为什么 encoder-decoder 更适合日前预测
 
@@ -148,7 +203,7 @@ Part 2 的目标：提出并训练一个**编码器-解码器架构**（`cnn_enc
 
 [13] Wu, H., et al. (2021). *Autoformer: Decomposition transformers with auto-correlation for long-term series forecasting.* NeurIPS.
 
-## 4. 实验结果
+## 5. 实验结果
 
 > _此节待训练完成后填写。_ 计划表格如下。
 
@@ -188,13 +243,13 @@ _填入 `runs/cnn_encoder_decoder/figures/training_curves.png`。_
 - 如果开了 `use_future_weather_xattn=True`，对比有无的差异；
 - 训练曲线形状：收敛速度是否变快，过拟合迹象等。
 
-## 5. 提交
+## 6. 提交
 
 - **Canonical 位置**：`/cluster/tufts/c26sp1cs0137/data/assignment3_data/evaluation/part2-models/pangliu/`
 - **内容**：`model.py`（此仓库 `evaluation/part2-models/pangliu/model.py`）+ `best.pt`（训练产出）+ `config.json`（训练产出）+ `models/__init__.py` + `models/cnn_encoder_decoder.py` + `models/cnn_transformer.py`（被 import）
 - **Self-test**：`sbatch scripts/self_eval.slurm part2-models/pangliu 2`（`self_eval.py` 已经 model-agnostic，从 ckpt args 里自动解析 model 名）。
 
-## 6. 局限与后续
+## 7. 局限与后续
 
 - 没调超参（lr、embed_dim、layer 数）— 一天时间不够做网格搜索。
 - 没做 ensemble — seed 固定的单次训练，方差未估。

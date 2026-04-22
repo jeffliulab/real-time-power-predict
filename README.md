@@ -40,7 +40,7 @@ See [docs/assignment.pdf](docs/assignment.pdf) for the full spec.
 | Part | Weight | Due | Status |
 |---|---|---|---|
 | Part 1 — Baseline CNN-Transformer patch architecture | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %** on 2 days of 2022, independently verified ([runs/cnn_transformer/](runs/cnn_transformer/)) |
-| Part 2 — Architecture search (beat the baseline) | 30 | **Apr 22** | 🔨 Code ready: `cnn_encoder_decoder` w/ cross-attention ([docs/part2_report.md](docs/part2_report.md)), pending HPC training |
+| Part 2 — Architecture search (beat the baseline) | 30 | **Apr 22** | 🚂 Training: `cnn_encoder_decoder` w/ cross-attention ([docs/part2_report.md](docs/part2_report.md)) on Tufts HPC (job 36620892, 18 epochs, A100) |
 | Part 3 — Model diagnosis OR independent study | 30 | May 1 | ⏳ Not started (preliminary plan: Track A — geographic attention maps) |
 | Report + presentation | — | May 1 / May 4 | ⏳ Not started |
 
@@ -85,32 +85,40 @@ Best val MAPE 6.92 % at epoch 12 (local val on 2021). Held-out test MAPE 5.24 % 
 
 ```
 real-time-power-predict/
-├── README.md                        # This file
-├── README_zh.md                     # Chinese version
+├── README.md / README_zh.md         # English / Chinese overview
 ├── .gitignore
 ├── docs/
 │   ├── assignment.pdf               # Course handout
-│   ├── progress.md                  # Current status & remaining work
-│   └── hpc-evaluation-structure.md  # Layout of /cluster/.../assignment3_data/evaluation/ on HPC
+│   ├── progress.md                  # Work plan & status (the source of truth)
+│   ├── part2_report.md              # Part 2 technical report
+│   └── hpc-evaluation-structure.md  # Layout of /cluster/.../evaluation/ on HPC
 ├── models/
-│   ├── __init__.py                  # Model registry
-│   └── cnn_transformer.py           # Part 1 baseline
+│   ├── __init__.py                  # Model registry (create_model, MODEL_DEFAULTS)
+│   ├── cnn_transformer.py           # Part 1 baseline (encoder-only, 1.75M)
+│   └── cnn_encoder_decoder.py       # Part 2 encoder-decoder (~2.29M)
 ├── training/
-│   ├── train.py                     # Training entry point
-│   └── data_preparation/
-│       └── dataset.py               # Dataset with LRU weather cache
+│   ├── train.py                     # Training entry point (shared by both models)
+│   └── data_preparation/dataset.py  # Dataset with LRU weather cache + z-score norm
 ├── evaluation/
-│   └── pangliu/                     # Course evaluator wrapper (get_model + adapt_inputs)
+│   ├── pangliu/                     # Part 1 eval wrapper (canonical Part 1 submission)
+│   │   └── model.py
+│   └── part2-models/pangliu/        # Part 2 eval wrapper (canonical Part 2 submission)
 │       └── model.py
 ├── runs/
-│   └── cnn_transformer/             # Part 1 artifacts
+│   ├── cnn_transformer/             # Part 1 artifacts
+│   └── cnn_encoder_decoder/         # Part 2 artifacts (after training)
 │       ├── config.json
 │       ├── norm_stats.pt
 │       ├── logs/training_log.csv
 │       └── figures/training_curves.png
-│       # Checkpoints (best.pt, latest.pt) excluded from git — pull from HPC.
+│       # Checkpoints (best.pt, latest.pt) gitignored — pull from HPC.
 └── scripts/
-    └── train.slurm                  # SLURM job for Tufts HPC gpu partition
+    ├── train.slurm                          # Part 1 training SLURM
+    ├── train_cnn_encoder_decoder.slurm      # Part 2 training SLURM (18 ep, 24h)
+    ├── self_eval.py + self_eval.slurm       # Model-agnostic MAPE evaluator (our own)
+    ├── self_test.slurm                      # TA test_run.sh wrapper (GPU partition)
+    ├── smoke_test.slurm                     # Param count + forward-pass check
+    └── cuda_probe.slurm                     # Module-combo probe for GPU compat
 ```
 
 ---
