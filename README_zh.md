@@ -39,9 +39,9 @@
 
 | 部分 | 分数 | 截止 | 状态 |
 |---|---|---|---|
-| Part 1 — baseline CNN-Transformer patch 架构 | 40 | 4/15 | ✅ 已提交，2022 年末 2 天切片测试 MAPE **5.24 %**（[runs/cnn_transformer/](runs/cnn_transformer/)）|
-| Part 2 — 超越 baseline 的架构搜索 | 30 | **4/22** | 🔨 计划 encoder-decoder + cross-attention（详见 [docs/progress.md](docs/progress.md)）|
-| Part 3 — 模型诊断 OR 独立研究 | 30 | 5/1 | ⏳ 未开始 |
+| Part 1 — baseline CNN-Transformer patch 架构 | 40 | 4/15 | ✅ 已提交，2022 年末 2 天切片测试 MAPE **5.24 %**，独立验证通过（[runs/cnn_transformer/](runs/cnn_transformer/)）|
+| Part 2 — 超越 baseline 的架构搜索 | 30 | **4/22** | 🔨 代码就绪：`cnn_encoder_decoder`（编码器-解码器 + cross-attention，详见 [docs/part2_report.md](docs/part2_report.md)），待 HPC 训练 |
+| Part 3 — 模型诊断 OR 独立研究 | 30 | 5/1 | ⏳ 未开始（初步方案：Track A 地理注意力图）|
 | 报告 + 展示 | — | 5/1 / 5/4 | ⏳ 未开始 |
 
 详细工作计划见 [docs/progress.md](docs/progress.md)；课程集群上 Part 1 提交的位置见 [docs/hpc-evaluation-structure.md](docs/hpc-evaluation-structure.md)。

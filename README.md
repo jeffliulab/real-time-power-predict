@@ -39,9 +39,9 @@ See [docs/assignment.pdf](docs/assignment.pdf) for the full spec.
 
 | Part | Weight | Due | Status |
 |---|---|---|---|
-| Part 1 — Baseline CNN-Transformer patch architecture | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %** on 2 days of 2022 ([runs/cnn_transformer/](runs/cnn_transformer/)) |
-| Part 2 — Architecture search (beat the baseline) | 30 | **Apr 22** | 🔨 Planned: encoder-decoder w/ cross-attention (see [docs/progress.md](docs/progress.md)) |
-| Part 3 — Model diagnosis OR independent study | 30 | May 1 | ⏳ Not started |
+| Part 1 — Baseline CNN-Transformer patch architecture | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %** on 2 days of 2022, independently verified ([runs/cnn_transformer/](runs/cnn_transformer/)) |
+| Part 2 — Architecture search (beat the baseline) | 30 | **Apr 22** | 🔨 Code ready: `cnn_encoder_decoder` w/ cross-attention ([docs/part2_report.md](docs/part2_report.md)), pending HPC training |
+| Part 3 — Model diagnosis OR independent study | 30 | May 1 | ⏳ Not started (preliminary plan: Track A — geographic attention maps) |
 | Report + presentation | — | May 1 / May 4 | ⏳ Not started |
 
 See [docs/progress.md](docs/progress.md) for the detailed work plan and [docs/hpc-evaluation-structure.md](docs/hpc-evaluation-structure.md) for where Part 1 lives on the course cluster.

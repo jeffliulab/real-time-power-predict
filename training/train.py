@@ -47,8 +47,16 @@ def parse_args():
     parser.add_argument("--embed_dim", type=int, default=128)
     parser.add_argument("--grid_size", type=int, default=8)
     parser.add_argument("--n_layers", type=int, default=4)
+    parser.add_argument("--n_encoder_layers", type=int, default=4,
+                        help="Encoder layers for cnn_encoder_decoder")
+    parser.add_argument("--n_decoder_layers", type=int, default=2,
+                        help="Decoder layers for cnn_encoder_decoder")
+    parser.add_argument("--use_future_weather_xattn", action="store_true",
+                        help="Enable cross-attn to future weather in decoder")
     parser.add_argument("--n_heads", type=int, default=4)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--warmup_steps", type=int, default=0,
+                        help="Linear LR warmup for N optimizer steps")
 
     # Data
     parser.add_argument("--train_years", type=int, nargs="+",
@@ -181,7 +189,8 @@ def compute_mape(preds, targets, norm_stats):
     return overall, per_zone
 
 
-def train_one_epoch(model, loader, optimizer, criterion, device, epoch=0):
+def train_one_epoch(model, loader, optimizer, criterion, device, epoch=0,
+                    warmup_steps=0, base_lr=1e-3, step_counter=None):
     model.train()
     total_loss = 0
     n_batches = 0
@@ -208,6 +217,15 @@ def train_one_epoch(model, loader, optimizer, criterion, device, epoch=0):
         optimizer.zero_grad()
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
+        # Linear LR warmup (first `warmup_steps` optimizer steps)
+        if step_counter is not None:
+            step_counter[0] += 1
+            if warmup_steps > 0 and step_counter[0] <= warmup_steps:
+                lr = base_lr * step_counter[0] / warmup_steps
+                for pg in optimizer.param_groups:
+                    pg["lr"] = lr
+
         optimizer.step()
 
         total_loss += loss.item()
@@ -294,10 +312,15 @@ def main():
         "history_len": args.history_len,
         "embed_dim": args.embed_dim,
         "grid_size": args.grid_size,
-        "n_layers": args.n_layers,
         "n_heads": args.n_heads,
         "dropout": args.dropout,
     }
+    if args.model == "cnn_encoder_decoder":
+        model_kwargs["n_encoder_layers"] = args.n_encoder_layers
+        model_kwargs["n_decoder_layers"] = args.n_decoder_layers
+        model_kwargs["use_future_weather_xattn"] = args.use_future_weather_xattn
+    else:
+        model_kwargs["n_layers"] = args.n_layers
     model = create_model(args.model, **model_kwargs)
     model = model.to(device)
 
@@ -337,8 +360,11 @@ def main():
                       for k, v in norm_stats.items()}
 
     epochs_no_improve = 0
+    step_counter = [0]  # mutable box for global optimizer-step count
 
     print(f"\nTraining for {args.epochs} epochs...")
+    if args.warmup_steps > 0:
+        print(f"LR warmup: linear for {args.warmup_steps} steps")
     if args.patience > 0:
         print(f"Early stopping enabled: patience={args.patience}")
     print("=" * 70)
@@ -347,7 +373,10 @@ def main():
         t0 = time.time()
 
         train_loss = train_one_epoch(model, train_loader, optimizer,
-                                     criterion, device, epoch)
+                                     criterion, device, epoch,
+                                     warmup_steps=args.warmup_steps,
+                                     base_lr=args.lr,
+                                     step_counter=step_counter)
         val_loss, preds, targets = validate(model, val_loader,
                                             criterion, device)
 

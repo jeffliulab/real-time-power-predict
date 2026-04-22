@@ -7,9 +7,11 @@ Usage:
 """
 
 from .cnn_transformer import CNNTransformerForecaster
+from .cnn_encoder_decoder import CNNEncoderDecoderForecaster
 
 MODEL_REGISTRY = {
     "cnn_transformer": CNNTransformerForecaster,
+    "cnn_encoder_decoder": CNNEncoderDecoderForecaster,
 }
 
 MODEL_DEFAULTS = {
@@ -18,6 +20,14 @@ MODEL_DEFAULTS = {
         "embed_dim": 128,
         "grid_size": 8,
         "n_layers": 4,
+        "n_heads": 4,
+    },
+    "cnn_encoder_decoder": {
+        "history_len": 24,
+        "embed_dim": 128,
+        "grid_size": 8,
+        "n_encoder_layers": 4,
+        "n_decoder_layers": 2,
         "n_heads": 4,
     },
 }
