@@ -91,18 +91,31 @@ def main():
     model_args = ckpt.get("args", {})
     norm_stats = torch.load(norm_path, weights_only=True)
 
-    model = create_model(
-        model_args.get("model", "cnn_transformer_baseline"),
+    model_name = model_args.get("model", "cnn_transformer_baseline")
+    common_kwargs = dict(
         n_weather_channels=7,
         n_zones=N_ZONES,
         cal_dim=44,
         history_len=model_args.get("history_len", args.history_len),
         embed_dim=model_args.get("embed_dim", 128),
         grid_size=model_args.get("grid_size", 8),
-        n_layers=model_args.get("n_layers", 4),
         n_heads=model_args.get("n_heads", 4),
         dropout=model_args.get("dropout", 0.1),
-    ).to(device)
+    )
+    if model_name == "cnn_encoder_decoder":
+        model = create_model(
+            model_name,
+            n_encoder_layers=model_args.get("n_encoder_layers", 4),
+            n_decoder_layers=model_args.get("n_decoder_layers", 2),
+            use_future_weather_xattn=model_args.get("use_future_weather_xattn", False),
+            **common_kwargs,
+        ).to(device)
+    else:
+        model = create_model(
+            model_name,
+            n_layers=model_args.get("n_layers", 4),
+            **common_kwargs,
+        ).to(device)
     model.load_state_dict(ckpt["model"])
     model.eval()
 

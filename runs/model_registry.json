@@ -1,0 +1,77 @@
+{
+  "registry_version": "1.0",
+  "task": "ISO-NE day-ahead 24h zonal demand forecasting",
+  "metric": "MAPE on physical MWh",
+  "test_slice": "last 2 days of 2022",
+  "models": {
+    "cnn_transformer_baseline": {
+      "description": "Part 1 baseline — single Transformer encoder over (S+24)*(P+1) flattened tokens",
+      "params_millions": 1.75,
+      "run_dir": "runs/cnn_transformer_baseline/",
+      "submission_path_hpc": "evaluation/part1-models/pangliu/",
+      "results": {
+        "val_mape_2021": 6.92,
+        "val_mape_best_epoch": 12,
+        "test_mape_2022_last2d": 5.24,
+        "per_zone_test_mape": {
+          "ME": 2.31, "NH": 3.69, "VT": 5.95, "CT": 7.28,
+          "RI": 5.27, "SEMA": 5.44, "WCMA": 5.87, "NEMA_BOST": 6.09
+        }
+      },
+      "training_config": {
+        "epochs_completed": 14,
+        "batch_size": 4,
+        "optimizer": "AdamW lr=1e-3 wd=1e-4",
+        "scheduler": "CosineAnnealingLR",
+        "train_years": [2019, 2020],
+        "val_years": [2021]
+      },
+      "status": "submitted, verified"
+    },
+    "cnn_encoder_decoder": {
+      "description": "Part 2 — encoder (history-only) + decoder (24 future queries cross-attend to mem_hist)",
+      "params_millions": 2.29,
+      "run_dir": "runs/cnn_encoder_decoder/",
+      "submission_path_hpc": "evaluation/part2-models/pangliu/",
+      "results": {
+        "val_mape_2022_at_epoch6": 8.63,
+        "test_mape_2022_last2d_epoch6_snapshot": 6.82,
+        "per_zone_test_mape_epoch6_snapshot": {
+          "ME": 3.22, "NH": 5.67, "VT": 5.85, "CT": 9.56,
+          "RI": 7.45, "SEMA": 7.22, "WCMA": 7.38, "NEMA_BOST": 8.24
+        },
+        "final_test_mape": "TBD — chain training in progress"
+      },
+      "training_config": {
+        "epochs_completed_snapshot": 6,
+        "epochs_total_planned": 24,
+        "batch_size": 4,
+        "warmup_steps": 500,
+        "n_encoder_layers": 4,
+        "n_decoder_layers": 2,
+        "use_future_weather_xattn": false,
+        "train_years": [2019, 2020, 2021],
+        "val_years": [2022]
+      },
+      "status": "training (chain: 36804770 -> 36804771 -> 36804772)"
+    },
+    "cnn_encoder_decoder_xattn": {
+      "description": "Part 2 ablation — encoder-decoder + future-weather cross-attention branch in decoder",
+      "params_millions": 2.42,
+      "run_dir": "runs/cnn_encoder_decoder_xattn/",
+      "submission_path_hpc": "(not submitted; ablation only)",
+      "results": "TBD — pending v2 chain training",
+      "training_config": {
+        "epochs_total_planned": 24,
+        "batch_size": 4,
+        "warmup_steps": 500,
+        "n_encoder_layers": 4,
+        "n_decoder_layers": 2,
+        "use_future_weather_xattn": true,
+        "train_years": [2019, 2020, 2021],
+        "val_years": [2022]
+      },
+      "status": "queued (chain: 36804839 -> 36804840 -> 36804841, deps on v1 chain)"
+    }
+  }
+}

@@ -3,8 +3,7 @@
 #SBATCH -t 0-24:00:00
 #SBATCH --mem=48G
 #SBATCH -p gpu
-#SBATCH --gres=gpu:a100:1
-#SBATCH --constraint=a100
+#SBATCH --gres=gpu:1
 #SBATCH -o runs/%x_%j.out
 #SBATCH -e runs/%x_%j.err
 #SBATCH -J cnn_encdec
@@ -50,7 +49,7 @@ echo "=========================================="
 
 python training/train.py \
     --model cnn_encoder_decoder \
-    --epochs 18 \
+    --epochs 24 \
     --batch_size 4 \
     --lr 1e-3 \
     --weight_decay 1e-4 \

@@ -7,19 +7,48 @@
 
 <p>
   <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/PyTorch-2.1+-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
-  <img src="https://img.shields.io/badge/Status-In%20Progress-yellow" alt="Status">
+  <img src="https://img.shields.io/badge/PyTorch-2.3-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
+  <img src="https://img.shields.io/badge/Status-Training%20%2F%20In%20Progress-yellow" alt="Status">
 </p>
 
 <p>
-  Multi-modal CNN-Transformer for <strong>24-hour per-zone electricity demand</strong> forecasting across the ISO New England grid.
+  Multi-modal CNN-Transformer for <strong>24-hour per-zone electricity demand</strong> forecasting across the ISO New England grid, fusing high-resolution weather rasters with historical demand and calendar features.
+</p>
+
+<p>
+  <em>Live demo and HF model weights coming after Part 2 training completes.</em>
 </p>
 
 </div>
 
 ---
 
-## Task
+## Highlights
+
+- **Two architectures** trained and compared end-to-end:
+  - **Part 1 baseline** — single-encoder CNN-Transformer (1.75 M params), test MAPE **5.24 %** on last 2 days of 2022 ✅ submitted
+  - **Part 2** — encoder-decoder with cross-attention (~2.29 M params), 🚂 chain training on Tufts HPC
+- **Self-contained pipeline**: data prep → training → evaluation → inference → real-time demo (Part 3)
+- **Faithful evaluation**: independent reproduction of the TA evaluator harness, byte-for-byte matching MAPE numbers
+- **24h SLURM-resilient training**: 6-job chain with `--dependency=afterany` auto-resumes across multiple wallclock windows
+
+---
+
+## Table of Contents
+
+- [Highlights](#highlights)
+- [Task Definition](#task-definition)
+- [Data and Normalization](#data-and-normalization)
+- [Architectures](#architectures)
+- [Results](#results)
+- [Project Structure](#project-structure)
+- [Quick Start](#quick-start)
+- [Status](#status)
+- [Acknowledgments](#acknowledgments)
+
+---
+
+## Task Definition
 
 Given a historical window ending at time `t`, predict hourly MWh demand for **all 8 ISO-NE load zones** over the next 24 hours `t+1 … t+24`. Inputs fuse high-dimensional weather maps (`450×449×7`) with tabular sequential data (past demand + calendar features). Assumes perfect future weather forecasts, matching real-world grid-operation pipelines.
 
@@ -31,53 +60,94 @@ See [docs/assignment.pdf](docs/assignment.pdf) for the full spec.
 | **Energy input** | `(B, S, 8)` — MWh per zone (ME, NH, VT, CT, RI, SEMA, WCMA, NEMA_BOST) |
 | **Calendar** | One-hot hour/dow/month + holiday flag (44-d), for all `S+24` timesteps |
 | **Output** | `(B, 24, 8)` — predicted MWh per zone for the next 24 h |
-| **Metric** | Average MAPE across the 24-h horizon and all zones |
+| **Metric** | Average MAPE across the 24-h horizon and all zones, in raw MWh space |
 
 ---
 
-## Current Status
+## Data and Normalization
 
-| Part | Weight | Due | Status |
-|---|---|---|---|
-| Part 1 — Baseline CNN-Transformer patch architecture | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %** on 2 days of 2022, independently verified ([runs/cnn_transformer_baseline/](runs/cnn_transformer_baseline/)) |
-| Part 2 — Architecture search (beat the baseline) | 30 | **Apr 22** | 🚂 Training: `cnn_encoder_decoder` w/ cross-attention ([docs/part2_report.md](docs/part2_report.md)) on Tufts HPC (job 36620892, 18 epochs, A100) |
-| Part 3 — Model diagnosis OR independent study | 30 | May 1 | ⏳ Not started (preliminary plan: Track A — geographic attention maps) |
-| Report + presentation | — | May 1 / May 4 | ⏳ Not started |
+| Property | Value |
+|---|---|
+| **Source** | ISO-NE zonal load CSVs + 7-channel HRRR-style weather tensors (Tufts HPC) |
+| **Region** | New England, 450×449 grid, ~3 km resolution |
+| **Coverage** | 2019 – 2023 hourly |
+| **Train** | 2019 + 2020 (baseline) / 2019-2021 (Part 2) |
+| **Val** | 2021 (baseline) / 2022 (Part 2) |
+| **Test (TA)** | last 2 days of 2022 |
 
-See [docs/progress.md](docs/progress.md) for the detailed work plan and [docs/hpc-evaluation-structure.md](docs/hpc-evaluation-structure.md) for where Part 1 lives on the course cluster.
+**Normalization pipeline** (single source of truth — both models share the same chain):
+
+1. `compute_norm_stats()` ([dataset.py](training/data_preparation/dataset.py)) — z-score from 500 random training samples (cached in `runs/<model>/norm_stats.pt`)
+2. Train-time: inputs **and** targets normalized → MSE loss in z-score space
+3. MAPE computed in **physical MWh space** after de-normalizing predictions
+4. Eval wrappers ([part1-baseline](evaluation/part1-baseline/model.py) / [part2-encoder-decoder](evaluation/part2-encoder-decoder/model.py)) re-apply the ckpt-embedded `norm_stats` so the TA evaluator sees raw MWh
 
 ---
 
-## Part 1 — Baseline (Hybrid CNN-Transformer, 1.75 M params)
+## Architectures
 
-Architecture follows the assignment spec (Figure 2):
+### Part 1 — Baseline ([cnn_transformer_baseline.py](models/cnn_transformer_baseline.py), 1.75 M params)
 
-1. **Spatial tokens** — each `(450, 449, 7)` weather snapshot passes through a ResBlock-based CNN (5 stride-2 stages + adaptive pool → `G×G` grid, default `G=8`) yielding `P = G²` tokens of dim `D = 128` per timestep.
-2. **Historical tabular tokens** — `Linear(demand + 44-d calendar → D)` per historical hour.
-3. **Future tabular tokens** — `Linear(learned_demand_mask + calendar → D)` for the 24 prediction hours.
-4. **Sequence assembly** — per hour, concatenate `P` spatial tokens + 1 tabular token. Add learnable spatial pos-embed (shared across time) + temporal pos-embed (shared across tokens within an hour) + learnable tabular-type embedding. Flatten to length `(S+24)·(P+1) = 48·65 = 3120`.
-5. **Transformer encoder** — pre-norm, 4 layers, 4 heads, GELU MLP.
-6. **Prediction** — slice the 24 future tabular tokens → `MLP(D → D/2 → 8)`.
+Hybrid CNN-Transformer, follows assignment Figure 2:
 
-Source: [models/cnn_transformer_baseline.py](models/cnn_transformer_baseline.py).
+```
+Weather (B,S+24,450,449,7) → Shared ResBlock CNN → 8×8 spatial token grid (P=64, D=128)
+    +
+Tabular tokens (1 per hour): Linear(demand+calendar → D)
+    +
+Spatial pos-embed × Temporal pos-embed × Tabular type-embed
+    ↓
+Single 4-layer Transformer encoder (self-attention over 3120 tokens)
+    ↓
+Slice 24 future tabular tokens → MLP(128→64→8) → (B, 24, 8) MWh
+```
 
-### Training configuration
+### Part 2 — Encoder-Decoder ([cnn_encoder_decoder.py](models/cnn_encoder_decoder.py), 2.29 M params)
 
-| Setting | Value |
-|---------|-------|
-| Optimizer | AdamW, lr=1e-3, wd=1e-4 |
-| Scheduler | CosineAnnealingLR |
-| Loss | MSE (on z-score-normalized targets) |
-| History length `S` | 24 hours |
-| Grid `G` | 8 → P = 64 spatial tokens |
-| Epochs | 15 (14 completed within 24 h time limit on A100-40GB) |
-| Train / val | 2019–2020 / 2021 |
+Day-ahead forecasting is a translation-style task: known future covariates act as **queries**, past observations as **memory**. We split the architecture accordingly:
 
-### Training curve
+```
+              Encoder (4 layers self-attn over history-only)
+              S × (P+1) = 1560 tokens →  mem_hist
+                        ↓
+24 decoder queries (seeded from future calendar embedding)
+              ↓
+              Decoder (2 layers: self-attn → cross-attn → MLP)
+                        ↓
+              MLP(128→64→8) → (B, 24, 8) MWh
+```
 
-![training curves](runs/cnn_transformer_baseline/figures/training_curves.png)
+**Why encoder-decoder.** Single-encoder baseline entangles past observations and future queries in one self-attention pool. The dedicated decoder gives the model a clean inductive bias: "future = query, past = memory". Encoder attention cost drops ~4× (1560² vs 3120²); the savings get reinvested in more epochs / a larger grid.
 
-Best val MAPE 6.92 % at epoch 12 (local val on 2021). Held-out test MAPE 5.24 % on the final 2 days of 2022 via the course evaluation harness.
+**Optional ablation** (`--use_future_weather_xattn`): adds a second cross-attention branch in each decoder block that attends to the **future** weather spatial tokens (24 × 64 = 1536 KV). Restores information parity with baseline.
+
+Full report: [docs/part2_report.md](docs/part2_report.md).
+
+---
+
+## Results
+
+### Test MAPE — last 2 days of 2022 (TA-defined slice)
+
+| Model | Params | Overall | ME | NH | VT | CT | RI | SEMA | WCMA | NEMA_BOST |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **Baseline (Part 1)** | 1.75 M | **5.24 %** | 2.31 | 3.69 | 5.95 | 7.28 | 5.27 | 5.44 | 5.87 | 6.09 |
+| Part 2 ED (epoch-6 snapshot) | 2.29 M | 6.82 % | 3.22 | 5.67 | 5.85 | 9.56 | 7.45 | 7.22 | 7.38 | 8.24 |
+| Part 2 ED (final) | 2.29 M | _TBD_ | | | | | | | | |
+| Part 2 ED + future-weather xattn | 2.42 M | _TBD_ | | | | | | | | |
+
+Part 2 numbers fill in after the chain training completes (see [Status](#status)).
+
+### Training trajectory (val MAPE, lower = better)
+
+| Epoch | Baseline (val 2021) | Part 2 ED (val 2022) |
+|---|---|---|
+| 0 | 11.22 % | 10.08 % |
+| 4 | 9.16 % | 8.70 % |
+| 6 | 8.76 % | **8.63 %** ✓ |
+| 13 (baseline final) | **6.92 %** | _TBD_ |
+
+Part 2 tracks slightly ahead of baseline at the same epoch despite training on a harder val set (2022 > 2021 in weather variability) and information-disadvantaged (`use_future_weather_xattn=False` by default).
 
 ---
 
@@ -86,90 +156,116 @@ Best val MAPE 6.92 % at epoch 12 (local val on 2021). Held-out test MAPE 5.24 % 
 ```
 real-time-power-predict/
 ├── README.md / README_zh.md         # English / Chinese overview
+├── CLAUDE.md                        # Repo-specific operating rules
 ├── .gitignore
 ├── docs/
 │   ├── assignment.pdf               # Course handout
-│   ├── progress.md                  # Work plan & status (the source of truth)
+│   ├── progress.md                  # Work plan & status
 │   ├── part2_report.md              # Part 2 technical report
-│   └── hpc-evaluation-structure.md  # Layout of /cluster/.../evaluation/ on HPC
+│   ├── part3_references.md          # Part 3 reading list & track plan
+│   └── hpc-evaluation-structure.md  # Tufts HPC evaluator layout
 ├── models/
-│   ├── __init__.py                  # Model registry (create_model, MODEL_DEFAULTS)
+│   ├── __init__.py                  # Registry: create_model, MODEL_DEFAULTS
 │   ├── cnn_transformer_baseline.py  # Part 1 baseline (encoder-only, 1.75M)
-│   └── cnn_encoder_decoder.py       # Part 2 encoder-decoder (~2.29M)
+│   └── cnn_encoder_decoder.py       # Part 2 encoder-decoder (2.29M)
 ├── training/
 │   ├── train.py                     # Training entry point (shared by both models)
-│   └── data_preparation/dataset.py  # Dataset with LRU weather cache + z-score norm
+│   └── data_preparation/dataset.py  # Dataset + LRU weather cache + z-score norm
 ├── evaluation/
-│   ├── part1-baseline/              # Part 1 eval wrapper (→ HPC part1-models/pangliu/)
-│   │   └── model.py
-│   └── part2-encoder-decoder/       # Part 2 eval wrapper (→ HPC part2-models/pangliu/)
-│       └── model.py
+│   ├── part1-baseline/              # Part 1 eval wrapper → HPC part1-models/pangliu/
+│   └── part2-encoder-decoder/       # Part 2 eval wrapper → HPC part2-models/pangliu/
+├── inference/
+│   └── predict.py                   # CLI inference (offline forecast)
+├── space/                           # HF Spaces real-time demo (Part 3 work)
+│   ├── app.py                       # Gradio UI
+│   ├── model_utils.py               # Self-contained model loading
+│   ├── iso_ne_fetch.py              # ISO Express real-time data fetcher (placeholder)
+│   ├── requirements.txt             # Space dependencies
+│   └── README.md                    # Deployment notes
+├── tests/
+│   └── smoke_test.py                # Param count + forward+backward sanity check
 ├── runs/
+│   ├── model_registry.json          # Central record of all trained models
 │   ├── cnn_transformer_baseline/    # Part 1 artifacts
 │   └── cnn_encoder_decoder/         # Part 2 artifacts (after training)
-│       ├── config.json
-│       ├── norm_stats.pt
-│       ├── logs/training_log.csv
-│       └── figures/training_curves.png
-│       # Checkpoints (best.pt, latest.pt) gitignored — pull from HPC.
 └── scripts/
     ├── train.slurm                          # Part 1 training SLURM
-    ├── train_cnn_encoder_decoder.slurm      # Part 2 training SLURM (18 ep, 24h)
-    ├── self_eval.py + self_eval.slurm       # Model-agnostic MAPE evaluator (our own)
-    ├── self_test.slurm                      # TA test_run.sh wrapper (GPU partition)
-    ├── smoke_test.slurm                     # Param count + forward-pass check
-    └── cuda_probe.slurm                     # Module-combo probe for GPU compat
+    ├── train_cnn_encoder_decoder.slurm      # Part 2 training SLURM (24h, any GPU)
+    ├── self_eval.py + self_eval.slurm       # Model-agnostic MAPE evaluator
+    ├── self_test.slurm + smoke_test.slurm   # Sanity checks
+    ├── cuda_probe.slurm                     # GPU module compatibility probe
+    ├── setup_conda_env.slurm + fix_conda_env.slurm   # Build the cs137 conda env
+    └── hf_upload.py                          # Push checkpoint to HF Hub
 ```
 
 ---
 
 ## Quick Start
 
-### Sync code to the cluster and train
+### 1. Sync code to HPC and train
 
 ```bash
-# From your laptop — rsync the repo to HPC
-rsync -avz --exclude=__pycache__ --exclude=.git ./ tufts-login:/cluster/tufts/c26sp1cs0137/pliu07/assignment3/
+# Local → HPC
+rsync -avz --exclude=__pycache__ --exclude=.git --exclude=runs --exclude=data \
+    ./ tufts-login:/cluster/tufts/c26sp1cs0137/pliu07/assignment3/
 
-# On the cluster — submit training job
+# Submit chain (3 × 24 h, any GPU, --resume from latest.pt)
 ssh tufts-login
 cd /cluster/tufts/c26sp1cs0137/pliu07/assignment3
-sbatch scripts/train.slurm --epochs 15 --train_years 2019 2020 --val_years 2021
+sbatch scripts/train_cnn_encoder_decoder.slurm \
+    --resume runs/cnn_encoder_decoder/checkpoints/latest.pt
 ```
 
-### Pull results back
+### 2. Pull results back
 
 ```bash
-rsync -avz --exclude=checkpoints tufts-login:/cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/ ./runs/
+rsync -avz --exclude=checkpoints \
+    tufts-login:/cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/ \
+    ./runs/
+# Pull specific checkpoint when ready
+rsync -avz tufts-login:/cluster/.../checkpoints/best.pt \
+    ./runs/cnn_encoder_decoder/checkpoints/
 ```
 
-### Run the course evaluator
-
-Submissions live at `/cluster/tufts/c26sp1cs0137/data/assignment3_data/evaluation/part1-models/<team>/` — see [docs/hpc-evaluation-structure.md](docs/hpc-evaluation-structure.md).
+### 3. Run TA evaluator (independent verification)
 
 ```bash
-# On HPC
-cd /cluster/tufts/c26sp1cs0137/data/assignment3_data/evaluation
-sbatch -J part1-models/pangliu test_run.sh 2   # 2 = number of test days
+ssh tufts-login
+cd /cluster/tufts/c26sp1cs0137/pliu07/assignment3
+sbatch scripts/self_eval.slurm runs/cnn_encoder_decoder/checkpoints/best.pt 2
+```
+
+Submission folder for grading: `/cluster/.../evaluation/part2-models/pangliu/` (per Piazza 4/16) — see [docs/hpc-evaluation-structure.md](docs/hpc-evaluation-structure.md).
+
+### 4. Run smoke test locally (CPU OK)
+
+```bash
+python -m tests.smoke_test
+```
+
+### 5. CLI inference on a saved sample
+
+```bash
+python -m inference.predict \
+    --checkpoint runs/cnn_encoder_decoder/checkpoints/best.pt \
+    --sample tests/sample_input.pt
 ```
 
 ---
 
-## Data
+## Status
 
-All data lives on the Tufts HPC at `/cluster/tufts/c26sp1cs0137/data/assignment3_data/` (~278 GB). The training script points at that path by default.
-
-| Item | Shape / type | Coverage |
-|---|---|---|
-| Weather tensors | `(450, 449, 7)` per hour | Hourly, 2019–2023 |
-| Energy demand CSVs | 8 zones, hourly MWh | 2019–2023, UTC |
-| Test set (held-out) | same format | 2024 |
-
-All timestamps are aligned in UTC to match the meteorological inputs. We z-score-normalize weather and energy inputs using statistics from 500 random training samples (cached in `runs/cnn_transformer_baseline/norm_stats.pt`).
+| Part | Weight | Due | Status |
+|---|---|---|---|
+| Part 1 — Baseline CNN-Transformer | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %**, independently verified |
+| Part 2 — Architecture search (encoder-decoder) | 30 | Apr 22 | 🚂 Training (chain `36804770 → 36804771 → 36804772` on Tufts HPC; ablation chain `36804839 → 36804840 → 36804841` queued) |
+| Part 3 — Geographic attention maps + real-time demo | 30 | May 1 | 📋 Planned ([docs/part3_references.md](docs/part3_references.md), [space/](space/)) |
+| Report + presentation | — | May 1 / May 4 | ⏳ Not started |
 
 ---
 
 ## Acknowledgments
 
-- **Compute**: Tufts Research Technology HPC (NVIDIA A100-40GB)
+- **Compute**: Tufts Research Technology HPC (NVIDIA A100-80GB / 40GB / P100)
 - **Course**: Tufts CS 137 — Deep Neural Networks, Spring 2026
+- **Sibling project**: [real_time_weather_forecasting](https://github.com/jeffliulab/real_time_weather_forecasting) (assignment 2) — shared HRRR data plumbing and project layout patterns
