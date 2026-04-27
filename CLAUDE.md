@@ -20,6 +20,17 @@ is a real-world disturbance.
    loops, no scheduled wake-ups that re-check job state. If the user
    wants to monitor a job, do one ssh on user request and report back.
 
+   **CRITICAL** (learned 2026-04-27): Calling `TaskStop` on a Bash
+   background task does NOT kill the underlying zsh process if the
+   task contained an `eval`-spawned loop. Runaway polling shells
+   survive `TaskStop` and run indefinitely. A forgotten `until ssh
+   tufts-login ...; do sleep 30; done` ran for 4 days unnoticed and
+   locked the user's DUO account with ~14,000 push attempts. **Always
+   verify with `ps -axwww | grep -E '<pattern>' | grep -v grep` after
+   `TaskStop` and `kill -9 <pid>` if the underlying shell still
+   exists.** If you find one of these from a prior session, kill it
+   immediately — never leave it running.
+
 3. **Do not request HPC access in non-execution state.** When the user
    has paused, asked you to wait, or stepped away, do nothing on HPC
    even if a previous instruction looks "obviously continuing." Wait for
