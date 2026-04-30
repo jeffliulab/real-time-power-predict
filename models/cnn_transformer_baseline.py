@@ -87,11 +87,16 @@ class EnergyTransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x):
+    def forward(self, x, return_attn=False):
         h = self.norm1(x)
-        h, _ = self.attn(h, h, h)
+        # average_attn_weights=False keeps per-head weights for analysis;
+        # default True returns head-averaged for normal training paths.
+        h, attn = self.attn(h, h, h, need_weights=return_attn,
+                            average_attn_weights=False)
         x = x + h
         x = x + self.mlp(self.norm2(x))
+        if return_attn:
+            return x, attn  # attn shape: (B, n_heads, L, L)
         return x
 
 
@@ -173,7 +178,7 @@ class CNNTransformerBaselineForecaster(nn.Module):
         )
 
     def forward(self, hist_weather, hist_energy, hist_cal,
-                future_weather, future_cal):
+                future_weather, future_cal, return_attn=False):
         """
         Parameters
         ----------
@@ -229,7 +234,13 @@ class CNNTransformerBaselineForecaster(nn.Module):
         seq = self.pos_drop(seq)
 
         # --- Transformer Encoder ---
-        seq = self.blocks(seq)
+        if return_attn:
+            attn_per_layer = []
+            for blk in self.blocks:
+                seq, attn = blk(seq, return_attn=True)
+                attn_per_layer.append(attn)
+        else:
+            seq = self.blocks(seq)
         seq = self.norm(seq)
 
         # --- Extract future tabular tokens ---
@@ -245,4 +256,6 @@ class CNNTransformerBaselineForecaster(nn.Module):
 
         # --- Prediction ---
         predictions = self.head(future_states)  # (B, 24, n_zones)
+        if return_attn:
+            return predictions, attn_per_layer
         return predictions

@@ -28,8 +28,14 @@ Thumbs.db
 *.swp
 
 # Claude local settings (do not publish)
-.claude/settings.local.json
-.claude/scheduled_tasks.lock
+.claude/
+CLAUDE.md
+
+# Working drafts and Claude collaboration artifacts (kept locally, not synced)
+docs/
+
+# Course material — don't redistribute (assignment.pdf, etc.)
+**/assignment.pdf
 
 # Recovery-only scratch files (session-specific)
 hpc相关信息供参考.txt
