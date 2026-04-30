@@ -3,188 +3,182 @@ marp: true
 theme: default
 paginate: true
 size: 16:9
+math: katex
 header: 'CS-137 Assignment 3 — Pang (Jeff) Liu (pliu07)'
-footer: '2026-04-30'
+footer: '2026-04-30 · solo submission'
 style: |
-  section { font-family: 'Helvetica Neue', sans-serif; }
-  h1 { font-size: 1.5em; }
-  h2 { font-size: 1.2em; }
-  table { font-size: 0.75em; margin: 0 auto; }
+  section {
+    font-family: 'Helvetica Neue', sans-serif;
+    color: #1F2937;
+    padding: 40px 60px;
+  }
+  h1 { color: #1A3A5C; font-size: 1.5em; margin-bottom: 0.3em; }
+  h2 { color: #1A3A5C; font-size: 1.05em; margin-top: 0; }
+  .lead h1 { font-size: 1.8em; }
+  .num {
+    color: #1A3A5C;
+    font-size: 1.6em;
+    font-weight: 700;
+  }
+  .red { color: #C0392B; font-weight: 700; }
+  .green { color: #1B8E4F; font-weight: 700; }
+  .navy { color: #1A3A5C; font-weight: 700; }
+  table { font-size: 0.78em; }
   img { display: block; margin: 0 auto; }
+  .row { display: flex; gap: 1.2em; align-items: center; }
+  .col { flex: 1; }
+  .caption { color: #4B5563; font-size: 0.78em; font-style: italic; text-align: center; margin-top: 0.3em; }
 ---
 
 <!-- _class: lead -->
 
-# ISO-NE Day-Ahead Energy Demand Forecasting
-## Multi-Modal CNN-Transformer
+# ISO-NE Day-Ahead Demand Forecasting
+## A Multi-Modal CNN-Transformer with Geographic Attention Diagnosis
 
-**Pang (Jeff) Liu** — UTLN: pliu07
-CS-137 — Assignment 3
-April 30, 2026 (final report) · May 5, 2026 (presentation)
+<div class="row">
+<div class="col">
 
-*Solo submission*
-
----
-
-## Task & Data
-
-**Task.** Predict next-24-hour electricity demand for all 8 ISO New England zones (ME, NH, VT, CT, RI, SEMA, WCMA, NEMA_BOST), given 24h history + future weather.
-
-**Inputs**
-
-- Weather rasters $X_t \in \mathbb{R}^{450 \times 449 \times 7}$ (HRRR-style, 7 channels)
-- Per-zone demand $Y_t \in \mathbb{R}^{8}$ (MWh)
-- Calendar features $C_t \in \mathbb{R}^{44}$ (one-hot hour/dow/month + holiday)
-
-**Output.** $\hat{Y}_{t+1}, \ldots, \hat{Y}_{t+24} \in \mathbb{R}^8$
-**Metric.** MAPE in physical MWh space (denormalized).
-
-> **Test-set caveat:** all numbers below are self-eval on **last 2 days of 2022** (mirrors cluster's `test_run.sh`). TA grades on 2024 held-out — model is data-year-agnostic, gaps should carry over.
-
----
-
-## Part 1 — Baseline (40 pts) — Architecture
-
-CNN downsamples each 450×449×7 weather snapshot → 8×8 spatial-token grid (P=64).
-Tabular tokens (demand+calendar) embedded per timestep.
-Unified sequence of $(S+24)\cdot(P+1) = 48 \cdot 65 = 3120$ tokens with spatial + temporal positional embeddings.
-4-layer Transformer encoder + per-future-hour MLP head.
-
-| Component | Choice |
-|---|---|
-| Embed dim | 128 |
-| Spatial grid | 8×8 = 64 tokens |
-| Heads × layers | 4 × 4 |
-| Params | ~1.75 M |
-| Train epochs | 14 (continuous) |
-| Optimizer / sched | AdamW + Cosine LR |
-
-**4-step normalization chain** (z-score from 500 train samples → train in z-space → MAPE denormalized to MWh → eval-wrapper closes the loop) is shared across Part 1 / Part 2 / Part 3 → cross-architecture comparisons are fair.
-
----
-
-## Part 1 — Baseline Result: 5.24 % test MAPE
-
-<div style="display:flex; gap: 1em;">
-<div style="flex: 1.2;">
-
-| Zone | Test MAPE |
-|---|---:|
-| ME | 2.31 % |
-| NH | 3.69 % |
-| VT | 5.95 % |
-| CT | 7.28 % |
-| RI | 5.27 % |
-| SEMA | 5.44 % |
-| WCMA | 5.87 % |
-| NEMA_BOST | 6.09 % |
-| **Overall** | **5.24 %** |
+![w:520](figures/iso_ne_map.png)
 
 </div>
-<div style="flex: 1.6;">
+<div class="col">
 
-![h:380](figures/training_curves_baseline.png)
+### Headline
 
-*Train and validation MAPE over 14 epochs; big drop at epoch 9 (10.45 % → 7.64 %) as cosine LR enters small-LR regime.*
+<span class="num">5.24 %</span> test MAPE
+**1.75 M** parameters
+**8** ISO-NE load zones · **24 h** horizon
+
+Pang (Jeff) Liu — `pliu07`
+Tufts CS-137 · April 30, 2026
 
 </div>
 </div>
 
 ---
 
-## Part 2 — Encoder-Decoder Design (30 pts)
+# Task & Metric
 
-**Hypothesis.** Splitting context-encoding (history) from query-decoding (future) and using cross-attention should improve fine-grained temporal localization.
+$$
+\hat Y_{t+1:t+24}\;=\;f_\theta\bigl(\,X_{t-S:t+24},\;Y_{t-S:t},\;C_{t-S:t+24}\bigr)
+$$
 
-**Architecture changes vs baseline**
+$$
+\mathrm{MAPE} \;=\; \frac{100}{24\,n_z}\sum_{h=1}^{24}\sum_{z=1}^{n_z}\frac{\bigl|\hat Y_{t+h,z}-Y_{t+h,z}\bigr|}{Y_{t+h,z}}
+$$
 
-- Separate **encoder** over history sequence (24 × 65 tokens) and **decoder** over 24 future-hour query tokens.
-- Decoder layers: self-attention + cross-attention into encoder memory.
-- v1 default: cross-attention to **history-spatial only**; v2 ablation enables `use_future_weather_xattn=True`.
+| Stream | Tensor | Source |
+|---|---|---|
+| Weather $X_t$ | $\mathbb{R}^{7\times 450\times 449}$ | HRRR-style reanalysis |
+| Demand $Y_t$ | $\mathbb{R}^{8}$ | ISO-NE zone reports |
+| Calendar $C_t$ | $\mathbb{R}^{44}$ | one-hot hour/dow/month + holiday |
 
-**Inspirations.** TFT, Earthformer, PatchTST.
-
-**Result.** v1 = **6.82 %** test MAPE (baseline 5.24 %, **+1.58 pp gap**). Only VT wins; biggest losses on the urban-coastal triplet CT / NEMA_BOST / RI — exactly the zones most sensitive to fine-grained future weather.
-
----
-
-## Part 2 — Why v1 Underperformed (Honest Diagnosis)
-
-![h:280](figures/baseline_vs_v1.png)
-
-**(1) Information disadvantage.** v1 decoder is by-default disconnected from future weather spatial tokens. v2 ablation (`use_future_weather_xattn=True`) currently training on HPC.
-
-**(2) LR-scheduler reset bug** ⚠ — `train.py` saves model+optimizer but **not** `scheduler.state_dict()`. Chained `--resume` after epoch 6 reset cosine LR (7.5e-4 → 1e-3), and v1 never recovered the small-LR sweet spot baseline reached at epoch 9.
-
-**(3) Validation set mismatch.** v1 validates on 2022 (harder); baseline on 2021. Per-epoch numbers not directly comparable, but test-set MAPEs are.
+<span class="caption">Test-set caveat: all numbers self-eval on last 2 days of 2022; TA grades on 2024.</span>
 
 ---
 
-## Part 3 — Attention Maps (30 pts, Track A)
+# Part 1 — Baseline Architecture (40 pts)
 
-**Approach.** From the trained baseline, extract `nn.MultiheadAttention` weights with `need_weights=True, average_attn_weights=False`. Slice the (3120 × 3120) matrix to:
+<div class="row">
+<div class="col" style="flex: 1.6;">
 
-- **Rows** = 24 future tabular query positions $\{t \cdot 65 + 64 : t \in [24, 47]\}$
-- **Cols** = 1536 history spatial keys $\{t \cdot 65 + p : t \in [0,23], p \in [0,63]\}$
+![h:480](figures/architecture.png)
 
-Reshape 64 spatial cells → (8 row, 8 col) row-major (matches `WeatherCNN.flatten(2)`); matplotlib `origin='upper'` puts north at top, west at left.
+</div>
+<div class="col">
 
-**Sanity check (orientation):** NEMA_BOST attention should be heavier on east half (cols 4–7). If assertion fails → flip axes before publishing.
+**Token assembly**
 
-**Status.** Code complete & verified locally; figures generated by `scripts/attention_maps.slurm` on HPC.
+$$
+\mathrm{seq}_{t,k} = \begin{cases}\mathrm{CNN}(X_t)_k + \mathbf{e}^{\mathrm{sp}}_k + \mathbf{e}^{\mathrm{tm}}_t & k<P \\ W_{\mathrm{tab}}[Y_t\Vert C_t] + \mathbf{e}^{\mathrm{tab}} + \mathbf{e}^{\mathrm{tm}}_t & k=P\end{cases}
+$$
 
----
+`P=64`, `S+24=48` ⇒ **3120 tokens**, $D=128$
 
-## Part 3 — Analytical Questions
+<span class="num">1.75 M</span> params · 4 enc layers × 4 heads · 14 epochs · A100
 
-Once figures are generated:
-
-1. **Which regions drive demand?** Expect a band along the urban Boston–Hartford corridor (south-east on the grid).
-2. **Does the model track incoming weather?** Per-hour attention should shift west as forecast hour increases (NE weather advects W → E).
-3. **Do zones attend to different regions?** ME → north; NEMA_BOST → near-coast east; CT → south-west; WCMA → west.
-
-**4 figures**: `attention_aggregate.png`, `attention_per_hour.png`, `attention_extreme_vs_mild.png`, `attention_per_zone.png`.
-
-The NEMA_BOST sanity assert is the load-bearing falsification test — if it passes, the qualitative claims above can be inspected from the four figures.
+</div>
+</div>
 
 ---
 
-## Findings, Limitations & Future Work
+# Part 1 — Per-zone Result
 
-**What worked**
+![h:380](figures/baseline_per_zone.png)
 
-- Baseline 5.24 % MAPE; ME and NH well below 4 %.
-- Four-step normalization chain reused across all architectures → fair comparisons.
-- Built persistent `cs137` conda env on HPC after course modules were removed.
+<p style="text-align:center; font-size:0.9em; margin-top:0.5em;">
+<span class="green">Best</span> ME 2.31 % · NH 3.69 %  &nbsp;|&nbsp;
+<span class="red">Worst</span> CT 7.28 % · NEMA_BOST 6.09 %  &nbsp;|&nbsp;
+<span class="navy">Overall <span class="num" style="font-size:1.1em;">5.24 %</span></span>
+</p>
 
-**What didn't (but we learned why)**
+---
 
-- v1 < baseline, with a reproducible LR-scheduler reset bug.
-- v2 with future-weather cross-attention is still training (A100/P100 contention); results expected 5/2–5/3.
+# Part 2 — Encoder-Decoder + LR-Reset Bug (30 pts)
 
-**Future work**
+![h:300](figures/baseline_vs_v1.png)
 
-1. Patch `scheduler.state_dict()` save/load in `train.py`.
-2. Re-run v1 continuous (no chain) for an apples-to-apples comparison.
-3. v1 vs v2 to disambiguate "architecture vs information" contributions.
-4. Real-time HF Spaces demo (skeleton in `space/`).
+<div class="row" style="font-size:0.85em; margin-top:0.4em;">
+<div class="col">
+
+**Result.** v1 = <span class="num" style="font-size:1.2em;">6.82 %</span>
+(baseline 5.24 % · <span class="red">+1.58 pp</span>); only VT wins.
+
+</div>
+<div class="col">
+
+**Diagnosed cause.** ⚠ `train.py` saves model+optimizer but **not** `scheduler.state_dict()` → chained `--resume` resets cosine LR (7.5e-4 → 1e-3 at epoch 7).
+
+</div>
+</div>
+
+---
+
+# Part 3 — Attention-Map Diagnosis (30 pts, Track A)
+
+$$
+A_{\mathrm{slice}}^{(\ell)} = A^{(\ell)}\bigl[\,:,\,:,\,\underbrace{\mathcal{Q}_{\mathrm{fut}}}_{24\text{ future tab.}},\,\underbrace{\mathcal{K}_{\mathrm{hist}}}_{24\,\cdot\,64\text{ hist.\ spatial}}\bigr] \in \mathbb{R}^{B\times h\times 24\times 1536}
+$$
+
+Reshape 64 cells → $(8\times 8)$ row-major (matches `WeatherCNN.flatten(2)`); `imshow(origin='upper')` = north up.
+
+**Sanity check** (encoded as runtime `assert`):
+
+$$
+\sum_{r=0}^{7}\sum_{c=4}^{7} A^{\mathtt{NEMA\_BOST}}_{rc} \;>\; \sum_{r=0}^{7}\sum_{c=0}^{3} A^{\mathtt{NEMA\_BOST}}_{rc}
+$$
+
+Three questions the figures answer: **which regions drive demand · does the model track weather · do zones differ?**
+
+<span class="caption">Code complete + verified locally; figures generated by `scripts/attention_maps.slurm` on HPC.</span>
 
 ---
 
 <!-- _class: lead -->
 
-## Contributions & Thanks
+# Findings & Thanks
 
-**Solo submission.**
-**Pang (Jeff) Liu** (pliu07) is the sole author of every component:
+<div class="row">
+<div class="col">
 
-- Literature survey • Architecture (Part 1 baseline, Part 2 encoder-decoder)
-- Training pipeline + 4-step normalization chain
-- HPC env setup + SLURM chain training
-- Self-eval harness + independent verification
-- Part 3 attention extraction + orientation correctness
-- Final report and these slides
+<span class="num">5.24 %</span>
+Part 1 baseline test MAPE
 
-**Thanks** to the CS-137 staff and the Tufts HPC team.
+<span class="num">1.75 M</span>
+parameters · 14 epochs · 22 h on A100
 
-Repo: `github.com/jeffliulab/predict-power`
+</div>
+<div class="col">
+
+<span class="num">+1.58 pp</span>
+v1 gap — diagnosed (LR-reset bug)
+
+<span class="num">2 days</span>
+self-eval slice; TA grades on 2024
+
+</div>
+</div>
+
+**Solo submission** — Pang (Jeff) Liu (pliu07) is the sole author of every component.
+
+Code: [github.com/jeffliulab/real-time-power-predict](https://github.com/jeffliulab/real-time-power-predict) · Thanks to CS-137 staff and the Tufts HPC team.
