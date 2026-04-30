@@ -9,30 +9,30 @@
 \section{Introduction}
 \label{sec:intro}
 
-We study the day-ahead electricity demand forecasting problem on the ISO New England (ISO-NE) grid: given a 24-hour history window of weather, demand, and calendar features, predict the next 24 hourly demand values for each of the eight ISO-NE load zones (\zone{ME}, \zone{NH}, \zone{VT}, \zone{CT}, \zone{RI}, \zone{SEMA}, \zone{WCMA}, \zone{NEMA\_BOST}). Concretely, with $S=24$ history steps, $\nz=8$ zones, and 44-dimensional one-hot calendar features $C_t$, the model computes
+We forecast next-24-hour electricity demand for each of the eight ISO New England (ISO-NE) load zones: \zone{ME}, \zone{NH}, \zone{VT}, \zone{CT}, \zone{RI}, \zone{SEMA}, \zone{WCMA}, \zone{NEMA\_BOST}. Inputs are a 24-hour window of weather rasters, demand, and calendar features. With $S=24$ history steps, $\nz=8$ zones, and 44-dimensional one-hot calendar features $C_t$, the model computes
 \begin{equation}
     \hat Y_{t+1:t+24} \;=\; f_\theta\!\bigl(\, X_{t-S:t+24}\!\in\!\mathbb{R}^{(S+24)\times 7\times 450\times 449},\;\; Y_{t-S:t}\!\in\!\mathbb{R}^{S\times \nz},\;\; C_{t-S:t+24}\!\in\!\mathbb{R}^{(S+24)\times 44}\bigr),
     \label{eq:task}
 \end{equation}
-where $X$ are HRRR-style hourly weather rasters (7 channels) \citep{benjamin2016hrrr}. The metric is mean absolute percentage error in physical megawatt-hour space, averaged over the 24-hour horizon and the 8 zones,
+where $X$ are HRRR-style hourly weather rasters (7 channels) \citep{benjamin2016hrrr}. The metric is mean absolute percentage error (MAPE) on physical MWh values, averaged over the 24-hour horizon and the 8 zones:
 \begin{equation}
     \mathrm{MAPE}(\hat Y, Y) \;=\; \frac{100}{24\,\nz}\sum_{h=1}^{24}\sum_{z=1}^{\nz}\frac{\bigl|\hat Y_{t+h,z}-Y_{t+h,z}\bigr|}{Y_{t+h,z}}.
     \label{eq:mape}
 \end{equation}
 
-\paragraph{Test-set caveat.} All MAPE numbers reported in this document are produced by our own self-evaluation harness on the \textbf{last 2 days of 2022} (2022-12-30 and 2022-12-31), mirroring the cluster's \texttt{inference/test\_run.sh} default. The TA's official grader runs the submitted \texttt{model.py} against a held-out \textbf{2024} slice; absolute numbers will differ but the model is data-year agnostic, so per-zone gaps and architectural trends should carry over.
+\paragraph{Test-set caveat.} All MAPE numbers in this report come from our own self-evaluation harness on the \textbf{last 2 days of 2022} (2022-12-30 and 2022-12-31). This mirrors the cluster's \texttt{inference/test\_run.sh} default. The TA's official grader runs the submitted \texttt{model.py} on a held-out \textbf{2024} slice. Absolute numbers will differ; the model is data-year agnostic, so per-zone gaps and architectural trends should carry over.
 
-\paragraph{Contributions.} (i)~A 1.75\,M-parameter CNN-Transformer baseline that reaches 5.24\,\% test MAPE (\S\ref{sec:method}); (ii)~an honest negative result on a 2.29\,M-parameter encoder-decoder variant, with three diagnosed root causes including a reproducible learning-rate scheduler reset bug (\S\ref{sec:archsearch}); and (iii)~a geographically-grounded attention-extraction pipeline with four orientation-correctness checks built in, ready to render zone-conditioned attention maps from the trained baseline (\S\ref{sec:attn}).
+\paragraph{Contributions.} (i)~A 1.75\,M-parameter CNN-Transformer baseline at 5.24\,\% test MAPE (\S\ref{sec:method}); (ii)~an honest negative result on a 2.29\,M-parameter encoder-decoder variant, with three diagnosed causes including a reproducible learning-rate scheduler reset bug (\S\ref{sec:archsearch}); and (iii)~a geographically-grounded attention extraction pipeline with four orientation-correctness checks built in (\S\ref{sec:attn}).
 
 % =====================================================================
 \section{Related Work}
 \label{sec:relwork}
 
-\paragraph{Patch-token Transformers for spatiotemporal data.} The ``image $\rightarrow$ flat sequence of patch tokens $\rightarrow$ Transformer'' recipe of ViT \citep{dosovitskiy2021vit} is the structural template for our weather encoder; we replace ViT's linear patch embedding with a small CNN trunk because our raster is $450{\times}449{\times}7$ rather than RGB at native resolution. TimeSformer \citep{bertasius2021timesformer} extends this to video by joint or factorized space-time attention, and Earthformer \citep{gao2022earthformer} specializes the design to gridded earth-system data with cuboid attention; both motivate our choice to share spatial position embeddings across timesteps and let the attention layer mix across the temporal dimension freely.
+\paragraph{Patch-token Transformers for spatiotemporal data.} ViT \citep{dosovitskiy2021vit} introduced the ``image $\to$ patch tokens $\to$ Transformer'' recipe that templates our weather encoder. We swap ViT's linear patch embedding for a small CNN trunk because our $450{\times}449{\times}7$ raster is too coarse for direct patch tokenization. TimeSformer \citep{bertasius2021timesformer} extends ViT to video; Earthformer \citep{gao2022earthformer} specializes it to gridded earth-system data with cuboid attention. Both motivate our choice to share spatial position embeddings across timesteps and let attention mix the temporal dimension freely.
 
-\paragraph{Tabular time-series Transformers.} PatchTST \citep{nie2023patchtst} shows that channel-independent patch tokens, plus a vanilla Transformer encoder, beat heavily-engineered baselines on long-horizon forecasting; iTransformer \citep{liu2024itransformer} inverts the dimensions and tokenizes whole variables. Our tabular branch is closer to PatchTST in spirit: each timestep's $(\nz + 44)$-dim demand-plus-calendar vector is linearly embedded into a single token, and we let attention mix temporal context. The Temporal Fusion Transformer \citep{lim2021tft} provides the canonical multi-horizon, multi-input forecasting architecture and is the reference point for our Part 2 encoder-decoder split.
+\paragraph{Tabular time-series Transformers.} PatchTST \citep{nie2023patchtst} shows that channel-independent patch tokens with a vanilla Transformer encoder beat heavily-engineered baselines on long-horizon forecasting. iTransformer \citep{liu2024itransformer} inverts the dimensions and tokenizes whole variables. Our tabular branch follows PatchTST: each timestep's $(\nz + 44)$-dim demand-plus-calendar vector is linearly embedded into one token, and attention mixes temporal context. The Temporal Fusion Transformer \citep{lim2021tft} is our reference point for the Part~2 encoder-decoder split.
 
-\paragraph{Weather-aware foundation models.} ClimaX \citep{nguyen2023climax} demonstrates that a single Transformer pretrained on multi-source climate fields transfers to downstream forecasting tasks; we read it as evidence that joint weather + tabular Transformer encoders are the right inductive bias for our problem, even at the modest scale our compute budget allows.
+\paragraph{Weather-aware foundation models.} ClimaX \citep{nguyen2023climax} shows that a single Transformer pretrained on multi-source climate fields transfers to downstream forecasting. We read it as evidence that joint weather + tabular Transformer encoders are the right inductive bias for our problem, even at our modest compute scale.
 
 % =====================================================================
 \section{Data and Normalization}
@@ -61,17 +61,17 @@ TA-side test          & 2024 (held out)         & TA's slice  \\
 \end{tabular}
 \end{table}
 
-\paragraph{Normalization pipeline.} Every model and evaluator in this project uses the same four-step chain, so cross-architecture comparisons are fair:
+\paragraph{Normalization pipeline.} Every model and evaluator uses the same four-step chain, so cross-architecture comparisons are fair:
 \begin{enumerate}
-  \item \textbf{Compute statistics once} from 500 random training samples: per-channel z-score for weather, $\mu_x \in \mathbb{R}^{7}$, $\sigma_x \in \mathbb{R}^{7}$; per-zone z-score for demand, $\mu_y, \sigma_y \in \mathbb{R}^{\nz}$. Cached in \texttt{runs/<model>/norm\_stats.pt}.
-  \item \textbf{Train-time normalization}: the dataset's \texttt{\_\_getitem\_\_} z-scores both inputs and targets with
+  \item \textbf{Compute statistics once} from 500 random training samples: per-channel z-score for weather $(\mu_x, \sigma_x \in \mathbb{R}^{7})$ and per-zone z-score for demand $(\mu_y, \sigma_y \in \mathbb{R}^{\nz})$. Cached in \texttt{runs/<model>/norm\_stats.pt}.
+  \item \textbf{Train-time normalization.} The dataset's \texttt{\_\_getitem\_\_} z-scores both inputs and targets:
     \begin{equation}
-        \tilde X = (X-\mu_x)/\sigma_x,\qquad \tilde Y = (Y-\mu_y)/\sigma_y;
+        \tilde X = (X-\mu_x)/\sigma_x,\qquad \tilde Y = (Y-\mu_y)/\sigma_y.
         \label{eq:zscore}
     \end{equation}
-    the loss is $\mathrm{MSE}(\hat{\tilde Y},\tilde Y)$, which has stable gradient magnitude across zones with very different load levels.
-  \item \textbf{Validation MAPE in physical space}: \texttt{compute\_mape(preds, targets, norm\_stats)} denormalizes both arguments with $Y = \sigma_y\,\tilde Y + \mu_y$ before applying Eq.~\eqref{eq:mape}, so the printed numbers are real percentages on real MWh.
-  \item \textbf{Eval-wrapper closure}: at TA-grade time, the wrapper reads the cached stats from the checkpoint, normalizes the grader's raw inputs, runs forward, denormalizes, and returns predictions in MWh.
+    The loss is $\mathrm{MSE}(\hat{\tilde Y},\tilde Y)$, which keeps gradient magnitudes stable across zones with very different load levels.
+  \item \textbf{Validation MAPE in physical space.} \texttt{compute\_mape(preds, targets, norm\_stats)} denormalizes both with $Y = \sigma_y\,\tilde Y + \mu_y$ before applying Eq.~\eqref{eq:mape}. Printed numbers are real MWh percentages.
+  \item \textbf{Eval-wrapper closure.} At TA-grade time, the wrapper reads cached stats from the checkpoint, normalizes the grader's raw inputs, runs forward, denormalizes, and returns predictions in MWh.
 \end{enumerate}
 This chain is byte-for-byte identical across the Part~1 baseline, the Part~2 v1 encoder-decoder, and the Part~3 attention extractor.
 
@@ -81,14 +81,14 @@ This chain is byte-for-byte identical across the Part~1 baseline, the Part~2 v1 
 
 \subsection{Architecture}
 
-We follow the Figure~2 spec of the assignment: a hybrid CNN-Transformer that downsamples each $450{\times}449{\times}7$ weather snapshot into an $8{\times}8$ spatial-token grid (so $P=64$ tokens per timestep) and concatenates it with one tabular token per timestep into a single sequence of length $(S+24)\cdot(P+1) = 48 \cdot 65 = 3120$ tokens.
+The baseline is a hybrid CNN-Transformer (Figure~\ref{fig:arch}). A small CNN downsamples each $450{\times}449{\times}7$ weather snapshot into an $8{\times}8$ spatial-token grid ($P=64$). One tabular token per timestep encodes demand and calendar features. The result is a single sequence of length $(S+24)\cdot(P+1) = 48 \cdot 65 = 3120$ tokens.
 
-Figure~\ref{fig:arch} shows the unified-sequence assembly. The CNN trunk is a five-stage residual stack \citep{he2016resnet} of strided convolutions ($32 \to 64 \to 128 \to 128 \to D$) followed by adaptive average pooling to the target $G{\times}G$ grid. Each timestep produces $P$ spatial tokens that share a learnable spatial position embedding and one tabular token formed by linearly embedding $[Y_t \,\Vert\, C_t]$ for history steps and $[\mathbf{m}\,\Vert\, C_t]$ for future steps, where $\mathbf{m}\!\in\!\mathbb{R}^{\nz}$ is a learnable demand-mask vector (zeros at init). Spatial and tabular tokens at the same timestep share a learnable temporal position embedding before being flattened into the unified sequence:
+The CNN trunk is a five-stage residual stack \citep{he2016resnet} of strided convolutions ($32 \to 64 \to 128 \to 128 \to D$) followed by adaptive average pooling to the target $G{\times}G$ grid. Each timestep produces $P$ spatial tokens that share a learnable spatial position embedding. The tabular token at history steps is a linear embedding of $[Y_t \,\Vert\, C_t]$; at future steps we replace the unknown demand with a learnable mask vector $\mathbf{m}\!\in\!\mathbb{R}^{\nz}$ (zeros at init) and embed $[\mathbf{m}\,\Vert\, C_t]$. Spatial and tabular tokens at the same timestep share a learnable temporal position embedding:
 \begin{equation}
     \mathrm{seq}_{t,k} \;=\; \begin{cases} \mathrm{CNN}(X_t)_{k} + \mathbf{e}_{k}^{\mathrm{sp}} + \mathbf{e}_{t}^{\mathrm{tm}} & k\in[0,P) \\ W_{\mathrm{tab}}\,[Y_t\,\Vert\,C_t] + \mathbf{e}^{\mathrm{tab}} + \mathbf{e}_{t}^{\mathrm{tm}} & k=P\;\text{(tabular)}. \end{cases}
     \label{eq:assembly}
 \end{equation}
-The sequence is processed by a 4-layer pre-norm Transformer encoder with multi-head self-attention \citep{vaswani2017attention,ba2016layernorm}; the 24 future-tabular states are sliced out and decoded by a per-future-hour MLP head into $\hat Y_{t+1:t+24}\!\in\!\mathbb{R}^{24\times \nz}$.
+A 4-layer pre-norm Transformer encoder with multi-head self-attention \citep{vaswani2017attention,ba2016layernorm} processes the sequence. We slice out the 24 future-tabular states and pass them through an MLP head to produce $\hat Y_{t+1:t+24}\!\in\!\mathbb{R}^{24\times \nz}$.
 
 \begin{figure}[!h]
 \centering
@@ -141,11 +141,6 @@ The sequence is processed by a 4-layer pre-norm Transformer encoder with multi-h
 \draw[arr] (seq) -- (tx);
 \draw[arr] (tx) -- (slice);
 \draw[arr] (slice) -- (head);
-
-% Annotations
-\node[lab, right=2mm of cnn] {\scriptsize $\to (G{\cdot}G,D)$ spatial tokens};
-\node[lab, right=2mm of lin1] {\scriptsize $\to (1,D)$ tab.\ token};
-\node[lab, right=2mm of lin2] {\scriptsize $\to (1,D)$ tab.\ token};
 \end{tikzpicture}
 \caption{\textbf{Part~1 baseline architecture.} A 5-stage residual CNN downsamples each $450{\times}449{\times}7$ weather raster into $G{\times}G{=}64$ spatial tokens that share a learnable spatial position embedding across timesteps. Tabular tokens (one per timestep) embed history $[Y_t \Vert C_t]$ and future $[\mathbf{m}\Vert C_t]$ with a learned demand mask $\mathbf{m}$. Spatial + tabular tokens at each timestep share a temporal position embedding and a learnable tabular-type token; the resulting 3120-token sequence is processed by a 4-layer pre-norm Transformer encoder and the 24 future-tabular states are decoded by an MLP head.}
 \label{fig:arch}
@@ -153,11 +148,11 @@ The sequence is processed by a 4-layer pre-norm Transformer encoder with multi-h
 
 \subsection{Training}
 
-We train with AdamW \citep{loshchilov2019adamw} at base learning rate $10^{-3}$, cosine annealing to zero \citep{loshchilov2017sgdr}, weight decay $10^{-4}$, batch size 4 per GPU, and dropout 0.1. The full configuration is in Table~\ref{tab:hparams} (Appendix~\ref{app:hparams}). The baseline trains continuously for 14 epochs on a single A100 (one SLURM job, no chained resumes), wall-time $\sim$22\,h.
+We train with AdamW \citep{loshchilov2019adamw} at base learning rate $10^{-3}$, cosine annealing to zero \citep{loshchilov2017sgdr}, weight decay $10^{-4}$, batch size 4 per GPU, and dropout 0.1. The full configuration is in Table~\ref{tab:hparams} (Appendix~\ref{app:hparams}). The baseline trains continuously for 14 epochs on a single A100, in one SLURM job with no chained resumes, in $\sim$22\,h.
 
 \subsection{Test results}
 
-Table~\ref{tab:baseline} reports the per-zone test MAPE on the held-out last two days of 2022. Overall MAPE is \textbf{5.24\,\%}; the model performs best on \zone{ME} (2.31\,\%) and \zone{NH} (3.69\,\%) --- the two most rural, least demand-volatile zones --- and worst on \zone{CT} and \zone{NEMA\_BOST}, the two most urban-coastal zones with the largest fine-grained weather sensitivity.
+Table~\ref{tab:baseline} reports per-zone test MAPE on the last two days of 2022. Overall MAPE is \textbf{5.24\,\%}. The model is strongest on \zone{ME} (2.31\,\%) and \zone{NH} (3.69\,\%) --- the most rural, least demand-volatile zones --- and weakest on \zone{CT} and \zone{NEMA\_BOST}, the urban-coastal zones with the most fine-grained weather sensitivity.
 
 \begin{figure}[!h]
 \centering
@@ -186,19 +181,110 @@ Test MAPE (\%) & 2.31 & 3.69 & 5.95 & 7.28 & 5.27 & 5.44 & 5.87 & 6.09 & \textbf
 
 \subsection{Design rationale}
 
-Inspired by TFT \citep{lim2021tft} and PatchTST \citep{nie2023patchtst}, we factor the model into an \emph{encoder} over the 24-step history and a \emph{decoder} over the 24 future-hour query tokens, connected by cross-attention. The hypothesis is that a clean encoder/decoder split should improve fine-grained temporal localization on the urban-coastal zones where the baseline is weakest.
+Inspired by TFT \citep{lim2021tft} and PatchTST \citep{nie2023patchtst}, we split the model into an \emph{encoder} over history and a \emph{decoder} over the 24 future-hour query tokens, connected by cross-attention. The hope: a clean encoder/decoder split improves fine-grained temporal localization on the urban-coastal zones where the baseline is weakest.
 
 The decoder uses self-attention plus cross-attention into the encoder memory:
 \begin{equation}
     \mathrm{Dec}(Q) \;=\; \mathrm{MHA}(Q, K_{\mathrm{mem}}, V_{\mathrm{mem}}),\qquad
-    K_{\mathrm{mem}}, V_{\mathrm{mem}}\in\bigl\{\,\text{history-spatial tokens, future-spatial tokens (v2 ablation)}\,\bigr\}.
+    K_{\mathrm{mem}}, V_{\mathrm{mem}}\in\bigl\{\,\text{history-spatial},\;\text{future-spatial (v2 only)}\,\bigr\}.
     \label{eq:xattn}
 \end{equation}
-v1 by default cross-attends only to history spatial tokens; v2 (currently training, see \S\ref{sec:archsearch-v2}) enables \texttt{use\_future\_weather\_xattn=True} so the decoder can also attend to the future weather encoder output.
+The two variants we trained share an identical joint encoder; the only architectural delta is \emph{which} subset of encoder memory the decoder reads. Figure~\ref{fig:v1v2} shows them side by side. v1 cross-attends to history-spatial keys only. v2 enables \texttt{use\_future\_weather\_xattn=True} and adds a second cross-attention path to future-spatial keys.
+
+\begin{figure}[!h]
+\centering
+\begin{subfigure}[t]{0.48\linewidth}\centering
+\begin{tikzpicture}[
+    >=Stealth, node distance=4mm and 1mm,
+    box/.style={draw, rounded corners=2pt, align=center, font=\scriptsize, inner sep=3pt},
+    inputbox/.style={box, fill=CardBG, draw=NavyAccent!50, minimum height=6mm, minimum width=14mm},
+    cnnbox/.style={box, fill=AccentBlue!12, draw=AccentBlue!70, minimum height=8mm, minimum width=14mm},
+    tabbox/.style={box, fill=GoodGreen!12, draw=GoodGreen!70, minimum height=8mm, minimum width=14mm},
+    encbox/.style={box, fill=NavyAccent!18, draw=NavyAccent, minimum height=11mm, minimum width=46mm, drop shadow},
+    decbox/.style={box, fill=NavyAccent!10, draw=NavyAccent!70, minimum height=11mm, minimum width=46mm, drop shadow},
+    memcellOn/.style={box, fill=NavyAccent!25, draw=NavyAccent, font=\tiny\bfseries, minimum height=5mm, minimum width=11mm, inner sep=1pt},
+    memcellOff/.style={box, fill=CardBG, draw=NavyAccent!25, font=\tiny, minimum height=5mm, minimum width=11mm, inner sep=1pt, text=SubInk},
+    outbox/.style={box, fill=BadRed!10, draw=BadRed!60, minimum height=8mm, minimum width=30mm},
+    arr/.style={->, thick, NavyAccent},
+    xattn/.style={->, thick, NavyAccent, line width=0.5mm},
+]
+\node[inputbox] (xw) {$X$};
+\node[inputbox, right=2mm of xw] (xh) {hist tab};
+\node[inputbox, right=2mm of xh] (xf) {fut.\ tab};
+\node[cnnbox, below=4mm of xw] (cnn) {CNN};
+\node[tabbox, below=4mm of xh] (eh) {embed};
+\node[tabbox, below=4mm of xf] (ef) {embed};
+\node[encbox, below=5mm of eh] (enc) {Encoder $\times 4$ (joint)\\\scriptsize over hist.\ + future, spatial + tab};
+\node[memcellOn, below=4mm of enc.south west, anchor=west] (memHS) {hist-spat.};
+\node[memcellOff, right=0pt of memHS] (memHT) {hist-tab};
+\node[memcellOff, right=0pt of memHT] (memFS) {fut-spat.};
+\node[memcellOff, right=0pt of memFS] (memFT) {fut-tab};
+\node[decbox, below=8mm of enc] (dec) {Decoder $\times 2$\\\scriptsize self-attn $+$ cross-attn (queries: fut-tab)};
+\node[outbox, below=4mm of dec] (head) {MLP head $\to \hat Y$};
+\draw[arr] (xw) -- (cnn);
+\draw[arr] (xh) -- (eh);
+\draw[arr] (xf) -- (ef);
+\draw[arr] (cnn) |- ([yshift=2mm]enc.north -| cnn);
+\draw[arr] (eh) -- (eh |- enc.north);
+\draw[arr] (ef) |- ([yshift=2mm]enc.north -| ef);
+\draw[arr] (enc.south) -- ([yshift=-1pt]memHS.north -| enc.south);
+\draw[xattn] (memHS.south) to[out=-90, in=90] node[left=1mm, font=\tiny\bfseries, color=NavyAccent, pos=0.5] {hist-spatial} (dec.north -| memHS.south);
+\draw[arr] (dec) -- (head);
+\end{tikzpicture}
+\caption{\textbf{v1} --- decoder reads \emph{only} the highlighted hist-spatial memory cell.}
+\label{fig:v1}
+\end{subfigure}\hfill
+\begin{subfigure}[t]{0.48\linewidth}\centering
+\begin{tikzpicture}[
+    >=Stealth, node distance=4mm and 1mm,
+    box/.style={draw, rounded corners=2pt, align=center, font=\scriptsize, inner sep=3pt},
+    inputbox/.style={box, fill=CardBG, draw=NavyAccent!50, minimum height=6mm, minimum width=14mm},
+    cnnbox/.style={box, fill=AccentBlue!12, draw=AccentBlue!70, minimum height=8mm, minimum width=14mm},
+    tabbox/.style={box, fill=GoodGreen!12, draw=GoodGreen!70, minimum height=8mm, minimum width=14mm},
+    encbox/.style={box, fill=NavyAccent!18, draw=NavyAccent, minimum height=11mm, minimum width=46mm, drop shadow},
+    decbox/.style={box, fill=NavyAccent!10, draw=NavyAccent!70, minimum height=11mm, minimum width=46mm, drop shadow},
+    memcellOn/.style={box, fill=NavyAccent!25, draw=NavyAccent, font=\tiny\bfseries, minimum height=5mm, minimum width=11mm, inner sep=1pt},
+    memcellOnAmber/.style={box, fill=WarnAmber!25, draw=WarnAmber, font=\tiny\bfseries, minimum height=5mm, minimum width=11mm, inner sep=1pt},
+    memcellOff/.style={box, fill=CardBG, draw=NavyAccent!25, font=\tiny, minimum height=5mm, minimum width=11mm, inner sep=1pt, text=SubInk},
+    outbox/.style={box, fill=BadRed!10, draw=BadRed!60, minimum height=8mm, minimum width=30mm},
+    arr/.style={->, thick, NavyAccent},
+    xattn/.style={->, thick, NavyAccent, line width=0.5mm},
+    xattnA/.style={->, thick, WarnAmber, line width=0.5mm, dashed},
+]
+\node[inputbox] (xw) {$X$};
+\node[inputbox, right=2mm of xw] (xh) {hist tab};
+\node[inputbox, right=2mm of xh] (xf) {fut.\ tab};
+\node[cnnbox, below=4mm of xw] (cnn) {CNN};
+\node[tabbox, below=4mm of xh] (eh) {embed};
+\node[tabbox, below=4mm of xf] (ef) {embed};
+\node[encbox, below=5mm of eh] (enc) {Encoder $\times 4$ (joint)\\\scriptsize over hist.\ + future, spatial + tab};
+\node[memcellOn, below=4mm of enc.south west, anchor=west] (memHS) {hist-spat.};
+\node[memcellOff, right=0pt of memHS] (memHT) {hist-tab};
+\node[memcellOnAmber, right=0pt of memHT] (memFS) {fut-spat.};
+\node[memcellOff, right=0pt of memFS] (memFT) {fut-tab};
+\node[decbox, below=8mm of enc] (dec) {Decoder $\times 2$\\\scriptsize self-attn $+$ cross-attn (queries: fut-tab)};
+\node[outbox, below=4mm of dec] (head) {MLP head $\to \hat Y$};
+\draw[arr] (xw) -- (cnn);
+\draw[arr] (xh) -- (eh);
+\draw[arr] (xf) -- (ef);
+\draw[arr] (cnn) |- ([yshift=2mm]enc.north -| cnn);
+\draw[arr] (eh) -- (eh |- enc.north);
+\draw[arr] (ef) |- ([yshift=2mm]enc.north -| ef);
+\draw[arr] (enc.south) -- ([yshift=-1pt]memHS.north -| enc.south);
+\draw[xattn] (memHS.south) to[out=-90, in=90] (dec.north -| memHS.south);
+\draw[xattnA] (memFS.south) to[out=-90, in=90] (dec.north -| memFS.south);
+\draw[arr] (dec) -- (head);
+\end{tikzpicture}
+\caption{\textbf{v2} --- adds the amber-highlighted \emph{fut-spat.} memory cell to the decoder's cross-attention sources.}
+\label{fig:v2}
+\end{subfigure}
+\caption{\textbf{Part~2 architectural delta.} v1 and v2 share an identical joint encoder. The only difference is which encoder-memory cell(s) the decoder cross-attends to: v1 reads \emph{hist-spatial} only (NavyAccent); v2 also reads \emph{fut-spatial} (amber). Same color palette as Figure~\ref{fig:arch}: AccentBlue CNN, GoodGreen tabular embed, NavyAccent Transformer, BadRed output.}
+\label{fig:v1v2}
+\end{figure}
 
 \subsection{Results --- v1 does not beat the baseline}
 
-Table~\ref{tab:v1} reports v1's per-zone test MAPE alongside the baseline. The overall gap is \textbf{+1.58\,pp} (v1 6.82\,\% vs.\ baseline 5.24\,\%); only \zone{VT} wins. The gap is widest on \zone{CT} (+2.28), \zone{RI} (+2.18), and \zone{NEMA\_BOST} (+2.15), \ie\ exactly the urban-coastal triplet that the design was supposed to help.
+Table~\ref{tab:v1} reports v1's per-zone test MAPE alongside the baseline. v1 is 6.82\,\% vs.\ the baseline's 5.24\,\% --- a \textbf{+1.58\,pp} gap. Only \zone{VT} wins. The gap is widest on \zone{CT} (+2.28), \zone{RI} (+2.18), and \zone{NEMA\_BOST} (+2.15) --- exactly the urban-coastal zones the design was supposed to help.
 
 \begin{table}[!h]
 \centering
@@ -219,9 +305,9 @@ $\Delta$ (v1$-$base) & +0.91 & +1.98 & $-$0.10 & +2.28 & +2.18 & +1.78 & +1.51 &
 \subsection{Three honest reasons for v1's underperformance}
 \label{sec:archsearch-reasons}
 
-\paragraph{(1) Information disadvantage.} The v1 decoder is by default disconnected from the future weather spatial tokens (the encoder still computes them, but the decoder only cross-attends to history spatial keys per Eq.~\eqref{eq:xattn}). The Part~1 baseline's joint encoder, in contrast, sees future weather directly via positional embeddings on the unified sequence. This alone is a plausible explanation for most of the gap on the urban-coastal zones, where future-weather timing is load-bearing.
+\paragraph{(1) Information disadvantage.} The v1 decoder is by default disconnected from future weather spatial tokens (left panel of Figure~\ref{fig:v1v2}). The encoder computes them, but only history-spatial keys reach the decoder. The Part~1 baseline's joint encoder, in contrast, sees future weather directly via positional embeddings on the unified sequence. This alone plausibly explains most of the gap on the urban-coastal zones, where future-weather timing is load-bearing.
 
-\paragraph{(2) Reproducible LR-scheduler reset bug (verified in our own code).} v1 was scheduled as a 3-job SLURM chain with \texttt{--dependency=afterany}, each 24\,h. The per-epoch learning rates in the consolidated training log show:
+\paragraph{(2) Reproducible LR-scheduler reset bug.} v1 ran as a 3-job SLURM chain with \texttt{--dependency=afterany}, each 24\,h. The per-epoch learning rates in the consolidated training log show:
 
 \begin{table}[!h]
 \centering
@@ -238,7 +324,7 @@ Epoch & LR & Notes \\
 \end{tabular}
 \end{table}
 
-The root cause: \texttt{training/train.py} saves \texttt{model.state\_dict()} and \texttt{optimizer.state\_dict()} but \emph{not} \texttt{scheduler.state\_dict()}. On resume, \texttt{CosineAnnealingLR(optimizer, T\_max=args.epochs)} re-initializes from scratch and the LR jumps back to $10^{-3}$, knocking the model out of its converged minimum. The Part~1 baseline trained continuously for 14 epochs with proper cosine decay and reached its big-drop epoch (10.45\,\% $\to$ 7.64\,\% at epoch 9, Figure~\ref{fig:baseline-curves}) at small LR; v1 never gets there. Figure~\ref{fig:bvsv1} shows the bug clearly: v1 train loss flat-lines at $\sim$0.35 from epoch~7 onward while baseline train loss steadily decreases to 0.20 by epoch~13. The fix is one line: save and restore \texttt{scheduler.state\_dict()} alongside the optimizer.
+Root cause: \texttt{training/train.py} saves \texttt{model.state\_dict()} and \texttt{optimizer.state\_dict()} but \emph{not} \texttt{scheduler.state\_dict()}. On resume, \texttt{CosineAnnealingLR(optimizer, T\_max=args.epochs)} re-initializes from scratch and the LR jumps back to $10^{-3}$, knocking the model out of its converged minimum. The baseline ran continuously for 14 epochs with proper cosine decay and hit its big-drop epoch (10.45\,\% $\to$ 7.64\,\% at epoch 9, Figure~\ref{fig:baseline-curves}) at small LR; v1 never gets there. Figure~\ref{fig:bvsv1} makes the bug obvious: v1 train loss flat-lines at $\sim$0.35 from epoch~7 onward, while the baseline train loss steadily falls to 0.20 by epoch~13. The fix is one line: save and restore \texttt{scheduler.state\_dict()} alongside the optimizer.
 
 \begin{figure}[!h]
 \centering
@@ -247,12 +333,12 @@ The root cause: \texttt{training/train.py} saves \texttt{model.state\_dict()} an
 \label{fig:bvsv1}
 \end{figure}
 
-\paragraph{(3) Validation set mismatch.} v1 validates on \textbf{2022} (harder, more weather extremes) while the baseline used \textbf{2021} (milder). The per-epoch val MAPE numbers (8.63\,\% vs.\ 6.92\,\%) are not directly comparable across the two models; the test-set MAPEs in Table~\ref{tab:v1} \emph{are} comparable because they are on the same slice.
+\paragraph{(3) Validation set mismatch.} v1 validates on \textbf{2022} (harder, more weather extremes); the baseline used \textbf{2021} (milder). Per-epoch val MAPE numbers (8.63\,\% vs.\ 6.92\,\%) are not directly comparable. The test-set MAPEs in Table~\ref{tab:v1} \emph{are} comparable because they are on the same slice.
 
 \subsection{v2 ablation --- with future-weather cross-attention}
 \label{sec:archsearch-v2}
 
-The v2 chain (SLURM jobs 36804839/40/41) was submitted on 2026-04-27 and entered \texttt{RUNNING} state on 2026-04-30 $\sim$10:50 due to A100/P100 contention during finals week. As of 2026-04-30 18:00 it is in epoch~0 ($\sim$22\,\% through). Estimated completion: 2026-05-02 to 05-03, after the 5/1 EOD deadline. v2 results will be folded into the live presentation (5/5) and a report addendum if available.
+v2 (right panel of Figure~\ref{fig:v1v2}) toggles on the future-spatial cross-attention path. The 3-job SLURM chain (jobs 36804839/40/41) was submitted on 2026-04-27 and entered \texttt{RUNNING} on 2026-04-30 $\sim$10:50 due to A100/P100 contention during finals week. As of 2026-04-30 18:00 it is in epoch~0 ($\sim$22\,\% through). Expected completion: 2026-05-02 to 05-03, after the 5/1 EOD deadline. v2 results will be folded into the live presentation (5/5) and a report addendum if available.
 
 % =====================================================================
 \section{Attention-Map Diagnosis --- Part 3, Track A (30\,pts)}
@@ -260,7 +346,7 @@ The v2 chain (SLURM jobs 36804839/40/41) was submitted on 2026-04-27 and entered
 
 \subsection{Approach}
 
-The Part~1 baseline uses \texttt{nn.MultiheadAttention} over the flat 3120-token sequence. We extract layer-wise attention with \texttt{need\_weights=True, average\_attn\_weights=False}, yielding $A^{(\ell)}\in\mathbb{R}^{B\times h\times 3120\times 3120}$ for each layer $\ell$. We then slice the sub-block whose rows are future-tabular query positions and columns are history-spatial key positions:
+The Part~1 baseline uses \texttt{nn.MultiheadAttention} over the flat 3120-token sequence. Each layer $\ell$ produces an attention matrix $A^{(\ell)}\in\mathbb{R}^{B\times h\times 3120\times 3120}$, extracted via \texttt{need\_weights=True, average\_attn\_weights=False}. We keep only the rows for future-tabular queries and columns for history-spatial keys:
 \begin{equation}
 \begin{aligned}
     \mathcal{Q}_{\mathrm{fut}} &= \bigl\{\,t\cdot(P{+}1) + P : t\in[S, S{+}24)\bigr\},\quad |\mathcal{Q}_{\mathrm{fut}}| = 24, \\
@@ -269,42 +355,42 @@ The Part~1 baseline uses \texttt{nn.MultiheadAttention} over the flat 3120-token
 \end{aligned}
 \label{eq:slice}
 \end{equation}
-For every future hour $h_{\mathrm{f}}\in[1,24]$, $A^{(\ell)}_{\mathrm{slice}}$ gives a distribution over $24\times 64$ pairs answering: \emph{for predicting hour $t{+}h_{\mathrm{f}}$, which historical map cells does the model rely on, and at which historical hour?}
+For every future hour $h_{\mathrm{f}}\in[1,24]$, $A^{(\ell)}_{\mathrm{slice}}$ gives a distribution over $24 \times 64$ pairs that answers: \emph{which historical map cells, at which historical hour, does the model rely on to predict hour $t{+}h_{\mathrm{f}}$?}
 
 \subsection{Geographic orientation correctness}
 
-The 64-cell spatial dimension is reshaped to an $8{\times}8$ grid \emph{row-major}, matching \texttt{WeatherCNN.forward}'s \texttt{flatten(2)} layout: cell index $i$ maps to \texttt{(row=$i\div 8$, col=$i\bmod 8$)}. With \texttt{matplotlib.imshow(\,\dots, origin='upper')} this puts row~0 (north) at the top and col~0 (west) at the left --- the standard map orientation. As a falsifiable sanity check, we assert that for the \zone{NEMA\_BOST} zone (eastern Massachusetts / metro Boston) the attention mass on the eastern half of the grid exceeds the mass on the western half:
+We reshape the 64-cell spatial dimension to an $8{\times}8$ grid \emph{row-major}, matching \texttt{WeatherCNN.forward}'s \texttt{flatten(2)} layout: cell index $i$ maps to \texttt{(row=$i\div 8$, col=$i\bmod 8$)}. With \texttt{matplotlib.imshow(\,\dots, origin='upper')} this puts row~0 (north) on top and col~0 (west) on the left --- standard map orientation. As a falsifiable sanity check, the \zone{NEMA\_BOST} zone (eastern Massachusetts / metro Boston) should attend more to the eastern half of the grid than the western half:
 \begin{equation}
     \sum_{r=0}^{7}\sum_{c=4}^{7} A^{\mathrm{NEMA\_BOST}}_{rc} \;>\; \sum_{r=0}^{7}\sum_{c=0}^{3} A^{\mathrm{NEMA\_BOST}}_{rc}.
     \label{eq:sanity}
 \end{equation}
-This assertion is encoded directly in \texttt{scripts/attention\_maps.py}; if it fails the orientation is flipped and we correct in code before publishing figures (see Appendix~\ref{app:extraction}).
+This assertion lives directly in \texttt{scripts/attention\_maps.py}. If it fails, the orientation is flipped and we fix in code before publishing figures (see Appendix~\ref{app:extraction}).
 
 \subsection{Status and analytical questions}
 
-The extraction script is implemented and verified locally on a CPU smoke test with synthetic input. The four target figures (\texttt{attention\_aggregate}, \texttt{attention\_per\_hour}, \texttt{attention\_extreme\_vs\_mild}, \texttt{attention\_per\_zone}) are produced by \texttt{scripts/attention\_maps.slurm} on Tufts HPC; rendering requires the cluster's weather-data slice and is the only piece of work pending after the 5/1 submission. The questions the figures will answer are:
+The extraction script is implemented and verified locally on a CPU smoke test with synthetic input. The four target figures (\texttt{attention\_aggregate}, \texttt{attention\_per\_hour}, \texttt{attention\_extreme\_vs\_mild}, \texttt{attention\_per\_zone}) are produced by \texttt{scripts/attention\_maps.slurm} on Tufts HPC. Rendering needs the cluster's weather data and is the only outstanding piece after the 5/1 submission. Questions the figures will answer:
 \begin{enumerate}
-  \item \textbf{Which geographic regions drive demand?} Hypothesis: a thick band along the Boston--Hartford corridor, since it concentrates load and weather variance.
-  \item \textbf{Does the model track incoming weather systems?} Hypothesis: per-hour attention shifts westward as forecast hour increases, because New England weather typically advects west$\to$east, so the model attends to upstream conditions that arrive at the load centers later.
-  \item \textbf{Do different zones attend to different regions?} Hypothesis: \zone{ME}~$\to$ north; \zone{NEMA\_BOST}~$\to$ near-coast east; \zone{CT}~$\to$ south-west; \zone{WCMA}~$\to$ west.
+  \item \textbf{Which regions drive demand?} Hypothesis: a thick band along the Boston--Hartford corridor (concentrated load and weather variance).
+  \item \textbf{Does the model track incoming weather?} Hypothesis: per-hour attention shifts west as forecast hour grows. New England weather typically advects west$\to$east, so the model should attend to upstream conditions that arrive at load centers later.
+  \item \textbf{Do zones attend to different regions?} Hypothesis: \zone{ME}~$\to$ north; \zone{NEMA\_BOST}~$\to$ near-coast east; \zone{CT}~$\to$ south-west; \zone{WCMA}~$\to$ west.
 \end{enumerate}
-The NEMA\_BOST sanity check (Eq.~\eqref{eq:sanity}) is the load-bearing falsification test: if it passes, the qualitative claims above can be inspected directly from the four figures.
+The NEMA\_BOST sanity check (Eq.~\eqref{eq:sanity}) is the load-bearing falsification test. If it passes, the qualitative claims above can be inspected directly from the four figures.
 
 % =====================================================================
 \section{Discussion}
 \label{sec:discussion}
 
-\paragraph{What worked.} The 1.75\,M-parameter Part~1 baseline reaches 5.24\,\% test MAPE in 22\,h on a single A100, with no architecture search and no curriculum. The four-step normalization chain (\S\ref{sec:data}) is the single biggest piece of engineering payoff: by computing MAPE in physical MWh space and z-scoring inputs/targets uniformly, we get apples-to-apples comparisons across architectures and a stable training signal across zones with very different load levels.
+\paragraph{What worked.} The 1.75\,M-parameter baseline reaches 5.24\,\% test MAPE in 22\,h on a single A100, with no architecture search and no curriculum. The four-step normalization chain (\S\ref{sec:data}) was the biggest piece of engineering payoff: MAPE in physical MWh space plus uniform z-scoring gives apples-to-apples cross-architecture comparisons and a stable training signal across zones with very different load levels.
 
-\paragraph{What didn't.} v1 lost to the baseline by 1.58\,pp despite a 30\,\% larger parameter count. The loss is concentrated on the urban-coastal zones (\zone{CT}, \zone{NEMA\_BOST}, \zone{RI}) where future-weather timing matters most --- consistent with the information-disadvantage hypothesis. The LR-scheduler reset bug (\S\ref{sec:archsearch-reasons}) is the dominant confound: it forces v1's loss to flat-line at exactly the epoch where the baseline started its big drop. Until v2 finishes, we cannot disambiguate ``architecture'' from ``information'' as the cause of v1's gap.
+\paragraph{What didn't.} v1 lost to the baseline by 1.58\,pp despite a 30\,\% larger parameter count. The loss is concentrated on the urban-coastal zones (\zone{CT}, \zone{NEMA\_BOST}, \zone{RI}) where future-weather timing matters most --- consistent with the information-disadvantage hypothesis. The LR-scheduler reset bug (\S\ref{sec:archsearch-reasons}) is the dominant confound: v1's loss flat-lines at exactly the epoch where the baseline started its big drop. Until v2 finishes, we cannot separate ``architecture'' from ``information'' as the cause of v1's gap.
 
-\paragraph{Limitations.} (i)~All numbers are on the last 2 days of 2022, a 2-window held-out slice; small-sample variance is non-negligible and the TA's 2024 grade may differ. (ii)~The CNN trunk is a fixed 5-stage residual stack; we did not explore the spatial-encoder design space. (iii)~The attention extraction in \S\ref{sec:attn} is read-only: it diagnoses the trained model but does not feed back into a training-time geographic prior.
+\paragraph{Limitations.} (i)~All numbers are on the last 2 days of 2022, a 2-window slice; small-sample variance is non-negligible and the TA's 2024 grade may differ. (ii)~The CNN trunk is a fixed 5-stage residual stack; we did not explore the spatial-encoder design space. (iii)~The attention extraction in \S\ref{sec:attn} is read-only: it diagnoses the trained model but does not feed back into a training-time geographic prior.
 
 % =====================================================================
 \section{Conclusion}
 \label{sec:conclusion}
 
-We presented a 1.75\,M-parameter CNN-Transformer that reaches 5.24\,\% test MAPE on the ISO-NE day-ahead demand task by tokenizing weather rasters with a small CNN trunk and concatenating with calendar/demand tabular tokens into a unified Transformer-friendly sequence. A 2.29\,M encoder-decoder variant lost to the baseline; the dominant cause is a reproducible scheduler-reset bug in our chained-resume training infrastructure rather than an architectural failure mode. The attention extraction pipeline for Part~3 is implemented and orientation-checked; figures will land in the final presentation after one HPC sbatch.
+We presented a 1.75\,M-parameter CNN-Transformer that reaches 5.24\,\% test MAPE on the ISO-NE day-ahead demand task. The model tokenizes weather rasters with a small CNN trunk and concatenates them with calendar+demand tabular tokens into a unified Transformer-friendly sequence. A 2.29\,M encoder-decoder variant lost to the baseline. The dominant cause is a reproducible scheduler-reset bug in our chained-resume training infrastructure, not an architectural failure mode. The Part~3 attention extraction pipeline is implemented and orientation-checked; figures will land in the live presentation after one HPC sbatch.
 
 \paragraph{Future work.} (i) Patch \texttt{scheduler.state\_dict()} save/load in \texttt{train.py}. (ii) Re-run v1 in a single uninterrupted SLURM window. (iii) Compare v1 vs.\ v2 to disambiguate ``architecture vs.\ information.'' (iv) A real-time HuggingFace Spaces demo using ISO Express + HRRR live data (skeleton in \texttt{space/}).
 
