@@ -205,43 +205,116 @@ Baseline 和 encoder-decoder 用的是：
 
 ## 5. 实验结果
 
-> _此节待训练完成后填写。_ 计划表格如下。
+> v1（无 future-weather xattn）的训练已完成；v2（with future-weather xattn）截至本文撰写时仍在 HPC 上训练（详见 §5.5）。
 
-### 4.1 测试集：2022 年末 2 天（和 Part 1 一致）
+### 5.1 测试集 MAPE — 2022 年末 2 天（TA 评测同切片）
 
-| 指标 | Baseline (Part 1) | Part 2 (ED) | Δ |
+| 指标 | Baseline (Part 1) | Part 2 v1 (ED) | Δ vs baseline |
 |---|---|---|---|
-| Overall MAPE | 5.24 % | **TBD** | — |
-| ME | 2.31 % | TBD | — |
-| NH | 3.69 % | TBD | — |
-| VT | 5.95 % | TBD | — |
-| CT | 7.28 % ← 最难 | TBD | — |
-| RI | 5.27 % | TBD | — |
-| SEMA | 5.44 % | TBD | — |
-| WCMA | 5.87 % | TBD | — |
-| NEMA_BOST | 6.09 % ← 次难 | TBD | — |
+| **Overall MAPE** | **5.24 %** | **6.82 %** | **+1.58 %**（落后）|
+| ME | 2.31 % | 3.22 % | +0.91 % |
+| NH | 3.69 % | 5.67 % | +1.98 % |
+| **VT** | 5.95 % | **5.85 %** | **−0.10 %** ✓ 唯一胜出 |
+| CT | 7.28 % ← 最难 | 9.56 % | +2.28 % ← 最大差距 |
+| RI | 5.27 % | 7.45 % | +2.18 % |
+| SEMA | 5.44 % | 7.22 % | +1.78 % |
+| WCMA | 5.87 % | 7.38 % | +1.51 % |
+| NEMA_BOST | 6.09 % ← 次难 | 8.24 % | +2.15 % |
 
-### 4.2 参数量与算力
+**v1 没有超越 baseline。** 唯一在 VT 上略胜。最大差距在 **CT、NEMA_BOST、RI**（都是城市密集区）— 这些 zone 的需求对**未来天气时序**（气温骤变的具体小时）最敏感，而 v1 的 decoder 只通过 future calendar 间接获取未来信息，没有直接看 future weather spatial token。这正是 v2 ablation 设计要测试的假设（§5.5）。
 
-| 项 | Baseline | Part 2 (ED) |
+### 5.2 参数量与算力
+
+| 项 | Baseline | Part 2 v1 (ED) |
 |---|---|---|
-| 总参数量 | 1.75 M | TBD |
-| Encoder attention FLOPs/layer | `3120² × D` | `1560² × D` (≈25 %) |
-| Decoder attention FLOPs/layer | — | `24² + 24·1560 × D`（很便宜）|
-| Epochs completed in 24 h | 14 | TBD |
-| 每 epoch 时间 | ~100 min | TBD（预期 ~70 min）|
+| 总参数量 | 1.75 M | **2.29 M**（+30 %）|
+| 4 × Encoder self-attn pairs | 4 × 3120² ≈ **39 M** | 4 × 1560² ≈ **9.7 M** （**−75 %**）|
+| 2 × Decoder self+cross-attn pairs | — | 2 × (24² + 24·1560) ≈ 75 K（可忽略）|
+| Epochs completed (有效)* | 14 | **6**（参见 §5.4）|
+| 单 epoch GPU time（A100）| ~100 min | ~74 min |
+| 单 epoch GPU time（P100）| — | ~250 min |
 
-### 4.3 训练曲线
+*v1 总共训练了 13 个 epoch（跨 3 个 chained job），但因为 LR scheduler reset 问题，**只有 epoch 0-6 是"有效训练"**（详见 §5.4）。
 
-_填入 `runs/cnn_encoder_decoder/figures/training_curves.png`。_
+### 5.3 训练曲线
 
-### 4.4 讨论
+#### v1 完整训练（epochs 0-13）
 
-（待训练完成后填写）：
-- Overall MAPE 是否超越 5.24 %，幅度；
-- CT / NEMA_BOST 的改善幅度，是否符合 "encoder-decoder 帮助未来 query 定位更准" 的假设；
-- 如果开了 `use_future_weather_xattn=True`，对比有无的差异；
-- 训练曲线形状：收敛速度是否变快，过拟合迹象等。
+![v1 training curves](../runs/cnn_encoder_decoder/figures/training_curves.png)
+
+- **左 panel**：train loss 在 epoch 6 后**卡在 ~0.35**，从未再下降
+- **中 panel**：val MAPE 在 epoch 6 (8.63%) 之后**反复抖动**，最终在 epoch 13 早停触发
+- **右 panel**：LR 每次 chained job resume 时**重置到 1e-3**（虚线 = resume 边界）
+
+#### Baseline vs v1 head-to-head
+
+![baseline vs v1](../runs/cnn_encoder_decoder/figures/baseline_vs_v1.png)
+
+关键观察：
+- 前 6 个 epoch v1 **略优于 baseline**（在更难的 val 2022 上还能并驾齐驱）
+- **epoch 9 处 baseline 出现 cosine LR 降到位的"大跳水"**（10.45% → 7.64%）
+- v1 由于 chained resume 让 LR 重置，**永远到不了 baseline 那个低 LR 微调点**
+
+### 5.4 关键发现：Chained --resume 训练失效（重要）
+
+我们在 4/27 提交了 6 个 24h SLURM job 的接力链（`--dependency=afterany`），打算用 72h 把 v1 训完。但实际 v1 在 **epoch 6 时已是 best.pt**，后续 7-13 epoch 训练完全无效。根因诊断：
+
+[`training/train.py`](../training/train.py) 在 ckpt 里保存：
+```python
+ckpt_data = {
+    "epoch": epoch,
+    "model": model.state_dict(),
+    "optimizer": optimizer.state_dict(),
+    "best_val_mape": ...,
+    "args": ...,
+    "norm_stats": ...,
+}
+torch.save(ckpt_data, "checkpoints/latest.pt")
+```
+
+**没有存 `scheduler.state_dict()`**。所以每次 chained job `--resume` 时：
+1. ckpt 读出 model + optimizer ✓
+2. `scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs)` **从头初始化**
+3. LR 跳回 1e-3（训练初始 LR）
+4. 已经到达 cosine 后期"小 LR 微调点"的模型被一记 LR=1e-3 的大梯度拉离最优解
+
+具体证据：
+- v1 epoch 7 LR = 1.0e-3（应该是 ~7.5e-4 才对）
+- v1 train loss 从 0.342 (epoch 6) 跳回 0.36，再也没回到 0.34 以下
+- baseline 的 epoch 9-13 cosine 自然衰减到 LR ~ 1e-4 时大幅改进（→ 6.92%）；v1 永远没到这个点
+
+**这是个 honest 的负面结果**：我们的 chained resume 方案在原理上有缺陷。**修复方法**（留给 Part 3 / 后续）：把 `scheduler.state_dict()` 加进 ckpt + resume 时 `scheduler.load_state_dict(ckpt["scheduler"])`。
+
+### 5.5 v2 ablation（with future-weather xattn）— 训练中
+
+为了验证 §5.1 的假设（CT / NEMA_BOST 落后是因为缺 future weather 信号），提交了 v2 链：
+
+```bash
+--use_future_weather_xattn  # decoder 加一条对 future_spatial 的 cross-attn
+--output_dir runs/cnn_encoder_decoder_xattn
+```
+
+参数量：v2 = **2.42 M**（+5.7% vs v1，加了一组 cross-attn 模块）。
+
+**截至 2026-04-30 12:50**：v2 chain 第 1 个 job (36804839) 在 P100 上跑了 2h 7min，进度 ~20% 第一个 epoch。loss 仍在 ~0.74-0.86（比 v1 同期 ~0.55 高，新增 cross-attn 模块在适应中）。预计 **5/2-5/3 完成全 chain**，**赶不上 5/1 EOD 截止**。
+
+v2 完整结果将在最终报告 + slide（5/4 截止）补上。
+
+### 5.6 讨论
+
+**为什么 v1 没超 baseline？**
+
+1. **信息劣势**（已在 §2 / §5.1 论述）：v1 默认 decoder 不看 future weather，只通过 future calendar 间接拿未来信息。Baseline 的 single encoder 反而能直接用 future weather spatial token。⚠️ 这是 v1 的设计取舍 / 故意如此（为做"纯 architectural change"的 ablation）—— v2 修正了这点。
+2. **训练劣势**（§5.4）：chained `--resume` LR scheduler 没保存 / 重置，让 v1 训练实际只有 epoch 0-6 有效。Baseline 的连续 14-epoch 训练才完整发挥了 cosine schedule。
+3. **数据劣势**：v1 用 2019-2021 训、val 2022（更难）；baseline 用 2019-2020 训、val 2021（更易）。这一点对**最终 test MAPE** 影响较小（因为 test 切片相同），但对 val MAPE 数字影响较大。
+
+**未来 4 件事可能让 ED 反超 baseline**：
+1. v2 跑完（5/3）— 有 future weather 后 CT、NEMA_BOST 应有显著改善
+2. 修复 chained resume 的 scheduler bug
+3. 训完整 14 epoch 不要 chain（在单个 24h job 内）
+4. 把 train_years 调成和 baseline 一致（2019-2020）做严格 apples-to-apples 对比
+
+**当前提交立场**：v1 best.pt（epoch 6, test MAPE 6.82%）作为 Part 2 主交付。我们诚实记录两个原因（信息劣势 + 训练 bug），这是 architectural search 中**有效的负面结果**。
 
 ## 6. 提交
 

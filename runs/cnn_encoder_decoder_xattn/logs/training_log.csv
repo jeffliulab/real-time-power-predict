@@ -1,0 +1,1 @@
+epoch,train_loss,val_loss,val_mape,val_mape_ME,val_mape_NH,val_mape_VT,val_mape_CT,val_mape_RI,val_mape_SEMA,val_mape_WCMA,val_mape_NEMA_BOST,lr,epoch_time
