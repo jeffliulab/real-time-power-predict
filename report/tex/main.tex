@@ -228,7 +228,7 @@ The two variants we trained share an identical joint encoder; the only architect
 \draw[arr] (eh) -- (eh |- enc.north);
 \draw[arr] (ef) |- ([yshift=2mm]enc.north -| ef);
 \draw[arr] (enc.south) -- ([yshift=-1pt]memHS.north -| enc.south);
-\draw[xattn] (memHS.south) to[out=-90, in=90] node[left=1mm, font=\tiny\bfseries, color=NavyAccent, pos=0.5] {hist-spatial} (dec.north -| memHS.south);
+\draw[xattn] (memHS.south) to[out=-90, in=90] (dec.north -| memHS.south);
 \draw[arr] (dec) -- (head);
 \end{tikzpicture}
 \caption{\textbf{v1} --- decoder reads \emph{only} the highlighted hist-spatial memory cell.}
@@ -398,7 +398,7 @@ We presented a 1.75\,M-parameter CNN-Transformer that reaches 5.24\,\% test MAPE
 \section{Contribution Statement}
 \label{sec:contrib}
 
-This is a \textbf{solo submission}. \textbf{Pang (Jeff) Liu} (UTLN: \texttt{pliu07}) is the sole author and is responsible for every component: the literature survey ($\sim$27 papers across Transformer time-series forecasting, spatiotemporal fusion, and short-term load forecasting), the Part~1 baseline (\texttt{models/cnn\_transformer\_baseline.py}) and Part~2 encoder-decoder (\texttt{models/cnn\_encoder\_decoder.py}), the training pipeline and four-step normalization chain, the persistent \texttt{cs137} HPC conda env that replaced the removed course modules, the SLURM chain submission scripts, the self-evaluation harness (\texttt{scripts/self\_eval.py}), the Part~3 attention extraction with orientation correctness checks (\texttt{scripts/attention\_maps.py}), and this report and the accompanying slides. AI tools (Claude Code) were used as a coding assistant under direct supervision; all design decisions, model choices, and report content reflect the author's own judgment.
+This is a \textbf{solo submission}. \textbf{Pang Liu} (UTLN: \texttt{pliu07}) is the sole author and is responsible for every component: the literature survey ($\sim$27 papers across Transformer time-series forecasting, spatiotemporal fusion, and short-term load forecasting), the Part~1 baseline (\texttt{models/cnn\_transformer\_baseline.py}) and Part~2 encoder-decoder (\texttt{models/cnn\_encoder\_decoder.py}), the training pipeline and four-step normalization chain, the persistent \texttt{cs137} HPC conda env that replaced the removed course modules, the SLURM chain submission scripts, the self-evaluation harness (\texttt{scripts/self\_eval.py}), the Part~3 attention extraction with orientation correctness checks (\texttt{scripts/attention\_maps.py}), and this report and the accompanying slides. AI tools (Claude Code) were used as a coding assistant under direct supervision; all design decisions, model choices, and report content reflect the author's own judgment.
 
 \bibliographystyle{plainnat}
 \bibliography{refs}
@@ -496,35 +496,15 @@ assert east > west, "Orientation flipped"
 \section{Reproducibility}
 \label{app:repro}
 
-\paragraph{Self-eval (mirrors TA grader, last 2 days of 2022):}
-\begin{lstlisting}[language=bash]
-cd predict-power
-bash inference/test_run.sh
-# Expected: overall MAPE ~5.24% (baseline)
-\end{lstlisting}
+The repository is self-contained. The main entry points:
 
-\paragraph{Train baseline from scratch on Tufts HPC:}
-\begin{lstlisting}[language=bash]
-sbatch scripts/cnn_transformer_baseline_train.slurm
-\end{lstlisting}
+\begin{itemize}
+  \item \texttt{scripts/cnn\_transformer\_baseline\_train.slurm} --- train Part~1 baseline.
+  \item \texttt{scripts/cnn\_encoder\_decoder\_train.slurm} --- train Part~2 v1; v2 is the same script with \texttt{--use\_future\_weather\_xattn} enabled and chained via \texttt{--dependency=afterany}.
+  \item \texttt{scripts/attention\_maps.slurm} --- generate Part~3 geographic attention figures from the trained baseline.
+  \item \texttt{inference/test\_run.sh} --- evaluate the trained baseline on the held-out 2-day 2022 slice.
+\end{itemize}
 
-\paragraph{Submit v1 chain (3 jobs, --dependency=afterany):}
-\begin{lstlisting}[language=bash]
-sbatch scripts/cnn_encoder_decoder_train.slurm   # job 1
-# subsequent jobs auto-submitted with --resume + afterany dependency
-\end{lstlisting}
-
-\paragraph{Generate Part~3 attention figures:}
-\begin{lstlisting}[language=bash]
-sbatch scripts/attention_maps.slurm
-# outputs to runs/cnn_transformer_baseline/figures/attention/
-\end{lstlisting}
-
-\paragraph{Conda env (HPC-side, persistent):}
-\begin{lstlisting}[language=bash]
-conda env create -p /cluster/tufts/c26sp1cs0137/pliu07/conda_envs/cs137 \
-                 -f environment.yml
-# torch 2.3.1+cu118, bundled cuDNN 8.9
-\end{lstlisting}
+The HPC-side conda environment lives at \texttt{/cluster/tufts/c26sp1cs0137/pliu07/conda\_envs/cs137} (torch 2.3.1+cu118, bundled cuDNN 8.9). Build instructions are in \texttt{environment.yml} at the repo root.
 
 \end{document}

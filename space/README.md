@@ -1,72 +1,58 @@
-# Space — Real-time ISO-NE Demand Forecast Demo
+---
+title: ISO-NE Energy Demand Forecasting
+emoji: ⚡
+colorFrom: blue
+colorTo: indigo
+sdk: gradio
+sdk_version: 4.44.0
+app_file: app.py
+pinned: false
+license: mit
+short_description: Real-time day-ahead demand forecasting for ISO New England
+---
 
-Hugging Face Spaces deployment for the trained Part 2 model.
+# ⚡ Multi-Modal Deep Learning for Energy Demand Forecasting
 
-**Status: scaffold — full real-time pipeline pending Part 3 work.**
+Live demo of the trained **CNN-Transformer baseline** from CS-137 Assignment 3 (Tufts University, Spring 2026). The baseline reaches **5.24 % MAPE** on the 2022 self-evaluation slice (last 2 days of 2022) when given real HRRR weather inputs.
 
-## What this demo will do (when complete)
+## What it does
 
-1. Click **Run Forecast**
-2. Fetch the last 24 hours of ISO-NE actual zonal demand from
-   ISO Express API (https://www.iso-ne.com/isoexpress/web-services-api)
-3. Fetch the last 24h + next 24h HRRR weather analysis/forecast for the
-   New England region (450×449×7 tensor) from NOAA AWS S3 via Herbie
-4. Pull 24h calendar features (hour-of-day, day-of-week, month, holiday)
-5. Feed all into the trained encoder-decoder CNN-Transformer
-6. Display:
-   - Per-zone 24h forecast lines (8 ISO-NE zones)
-   - Total system load forecast
-   - Comparison vs. ISO-NE's own forecast (if API exposes it)
-   - Side-by-side weather map for context (HRRR temperature)
+1. Pick a target datetime (UTC) — defaults to "now".
+2. The Space fetches the last 24 hours of ISO New England system demand from the public ISO Express data feed and splits it into the 8 load zones using a fixed proportion vector estimated from 2022 historical zonal reports. (If the live feed is unreachable, it falls back to a bundled 24-hour CSV from 2022.)
+3. Calendar features (hour-of-day, day-of-week, month, US-holiday flag) are computed for the past 24 h and the next 24 h.
+4. The trained baseline runs forward and produces a 24-hour per-zone demand forecast in MWh.
+5. You see two plots: an 8-panel per-zone history+forecast chart and a sorted bar of next-hour predicted demand.
 
-## Files (planned)
+## ⚠ Demo limitation — synthetic weather inputs
+
+This Space substitutes **zeros** (training-mean weather in z-score space) for the model's weather raster channel. The cluster runs that hit **5.24 % MAPE** used real HRRR rasters. Calendar features and the recent demand pattern still drive the output, so the forecast shape is preserved, but absolute accuracy is degraded vs. the cluster.
+
+The full real-weather pipeline (live HRRR fetch + per-zone real-time demand) is documented in the report and tracked as future work.
+
+## Links
+
+- 📄 [Final report (PDF)](https://github.com/jeffliulab/real-time-power-predict/blob/main/report/final_report.pdf)
+- 💻 [GitHub repository](https://github.com/jeffliulab/real-time-power-predict)
+- 👤 Author: **Pang Liu** · `pliu07` · Tufts CS-137
+
+## Local development
+
+```bash
+cd space
+pip install -r requirements.txt
+python app.py     # http://localhost:7860
+```
+
+## File map
 
 | File | Purpose |
 |---|---|
-| `app.py` | Gradio UI |
-| `iso_ne_fetch.py` | Fetch real-time ISO-NE demand from ISO Express |
-| `weather_fetch.py` | Fetch HRRR weather (history + 24h forecast) — port from real_time_weather_forecasting |
-| `model_utils.py` | Load `best.pt`, run inference, denormalize |
-| `visualization.py` | 8-zone forecast plots + maps |
-| `models/` | Copy of `models/cnn_encoder_decoder.py` + `cnn_transformer_baseline.py` (HF Spaces needs self-contained code) |
-| `checkpoints/best.pt` | Trained model weights (≤ 100 MB) — copied from `runs/cnn_encoder_decoder/checkpoints/` after training completes |
-| `requirements.txt` | Gradio, torch, herbie-data, requests, plotly |
-| `packages.txt` | apt-level deps if any |
-
-## Deployment
-
-After model training is complete:
-```bash
-python scripts/deploy_space.py    # uploads space/ to HF Spaces
-python scripts/hf_upload.py       # uploads checkpoint to HF Hub
-```
-
-## ISO-NE data sources (research notes)
-
-- **ISO Express API** (free, no auth required for some endpoints):
-  https://www.iso-ne.com/isoexpress/web-services
-  - `/genfuelmix/current.json` — fuel mix
-  - `/loadhrly/current/json` — system load (5-min, 1-hr aggregates)
-  - Per-zone load: needs ISO-NE account
-- **Alternative**: scrape https://www.iso-ne.com/isoexpress/ HTML
-- **Historical demand CSVs** (what we trained on): same format from ISO-NE's monthly archives
-
-## Weather (reuse from sibling project)
-
-Already implemented in `real_time_weather_forecasting/space/hrrr_fetch.py`:
-- Uses `herbie-data` Python library
-- Fetches HRRR analysis from NOAA AWS S3
-- Regrids to 450×449 grid
-
-We need the same 7-channel subset our model was trained on (TMP, RH, UGRD,
-VGRD, GUST, DSWRF, APCP_1hr — channels 0-6 of the 42-channel HRRR input
-the weather project uses).
-
-## Developer notes
-
-- HF Spaces free tier: 16 GB RAM, 2 vCPU, no GPU. Inference is fast on
-  CPU since model is only ~2.4 M params.
-- Cold start: HF Spaces sleeps after inactivity, first request takes ~30s
-  to wake.
-- Streaming logs: `gr.update(...)` for progressive UI feedback during
-  the ~30s data fetch.
+| `app.py` | Gradio Blocks UI + request handler |
+| `iso_ne_fetch.py` | Live ISO-NE demand fetch (with CSV fallback) |
+| `calendar_features.py` | 44-d calendar one-hot encoder |
+| `model_utils.py` | Checkpoint loading + inference + denormalization |
+| `models/cnn_transformer_baseline.py` | Baseline architecture (1.75 M params) |
+| `checkpoints/best.pt` | Trained baseline weights (~20 MB) |
+| `checkpoints/norm_stats.pt` | z-score statistics for de-/normalization |
+| `assets/` | Figures shown in the *About* tab |
+| `about.md` | Demo explanation rendered in the UI |

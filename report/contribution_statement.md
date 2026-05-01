@@ -7,7 +7,7 @@ description: Solo-author declaration for CS-137 Assignment 3.
 
 This is a **solo submission**.
 
-**Pang (Jeff) Liu** (UTLN: pliu07) is the sole author and is responsible for every component of this project:
+**Pang Liu** (UTLN: pliu07) is the sole author and is responsible for every component of this project:
 
 - **Literature survey** — ~27 papers across Transformer time-series forecasting (Vaswani et al. 2017; Lim et al. TFT 2021; Nie et al. PatchTST 2023; Liu et al. iTransformer 2024), spatiotemporal fusion (Gao et al. Earthformer 2022; Bertasius et al. TimeSformer 2021), and short-term load forecasting.
 - **Architecture design + implementation** — Part 1 baseline ([models/cnn_transformer_baseline.py](../models/cnn_transformer_baseline.py)) and Part 2 encoder-decoder variant with optional future-weather cross-attention ([models/cnn_encoder_decoder.py](../models/cnn_encoder_decoder.py)).

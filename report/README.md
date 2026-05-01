@@ -74,4 +74,4 @@ Phase 3 attention figures are generated on HPC via `scripts/attention_maps.slurm
 
 ## Authorship
 
-Solo submission — Pang (Jeff) Liu (UTLN: pliu07). See [contribution_statement.md](contribution_statement.md) and §9 of `final_report.pdf`.
+Solo submission — Pang Liu (UTLN: pliu07). See [contribution_statement.md](contribution_statement.md) and §9 of `final_report.pdf`.

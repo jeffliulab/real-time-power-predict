@@ -4,7 +4,7 @@ theme: default
 paginate: true
 size: 16:9
 math: katex
-header: 'CS-137 Assignment 3 — Pang (Jeff) Liu (pliu07)'
+header: 'CS-137 Assignment 3 — Pang Liu (pliu07)'
 footer: '2026-04-30 · solo submission'
 style: |
   section {
@@ -32,8 +32,7 @@ style: |
 
 <!-- _class: lead -->
 
-# ISO-NE Day-Ahead Demand Forecasting
-## A Multi-Modal CNN-Transformer with Geographic Attention Diagnosis
+# Multi-Modal Deep Learning for Energy Demand Forecasting
 
 <div class="row">
 <div class="col">
@@ -49,8 +48,10 @@ style: |
 **1.75 M** parameters
 **8** ISO-NE load zones · **24 h** horizon
 
-Pang (Jeff) Liu — `pliu07`
+Pang Liu — `pliu07`
 Tufts CS-137 · April 30, 2026
+
+[GitHub Code](https://github.com/jeffliulab/real-time-power-predict) · [HF Space (Real Time Demo)](https://huggingface.co/spaces/jeffliulab/predict-power)
 
 </div>
 </div>
@@ -179,6 +180,6 @@ self-eval slice; TA grades on 2024
 </div>
 </div>
 
-**Solo submission** — Pang (Jeff) Liu (pliu07) is the sole author of every component.
+**Solo submission** — Pang Liu (pliu07) is the sole author of every component.
 
-Code: [github.com/jeffliulab/real-time-power-predict](https://github.com/jeffliulab/real-time-power-predict) · Thanks to CS-137 staff and the Tufts HPC team.
+Code: [github.com/jeffliulab/real-time-power-predict](https://github.com/jeffliulab/real-time-power-predict) · Demo: [huggingface.co/spaces/jeffliulab/predict-power](https://huggingface.co/spaces/jeffliulab/predict-power) · Thanks to CS-137 staff and the Tufts HPC team.
