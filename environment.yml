@@ -1,0 +1,26 @@
+# Conda environment matching the persistent HPC env at
+# /cluster/tufts/c26sp1cs0137/pliu07/conda_envs/cs137.
+#
+# Build:    conda env create -p ./conda_envs/cs137 -f environment.yml
+# Activate: conda activate ./conda_envs/cs137
+
+name: cs137
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - pytorch=2.3.1
+  - pytorch-cuda=11.8
+  - cudnn=8.9
+  - numpy>=1.26,<2
+  - pandas>=2.0
+  - matplotlib>=3.8
+  - xarray>=2024.1
+  - netcdf4>=1.6
+  - scikit-learn>=1.3
+  - tqdm>=4.66
+  - pip:
+    - -r requirements.txt
