@@ -33,6 +33,9 @@ CLAUDE.md
 
 # Working drafts and Claude collaboration artifacts (kept locally, not synced)
 docs/
+# Report folder is local-only — final deliverables are uploaded directly to
+# GradeScope from report/submission/, not synced through GitHub.
+report/
 
 # Course material — don't redistribute (assignment.pdf, etc.)
 **/assignment.pdf
