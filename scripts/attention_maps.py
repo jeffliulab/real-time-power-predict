@@ -44,6 +44,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.patches import Rectangle
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -59,6 +60,89 @@ P = GRID * GRID          # = 64 spatial tokens per timestep
 S = 24                   # history length
 F = 24                   # future length
 TOK_PER_STEP = P + 1     # 64 spatial + 1 tabular
+
+# --- Visualization style ---------------------------------------------
+# Match the report's TikZ palette so attention figures sit alongside
+# Figures 1-3 visually.
+NAVY = "#1A3A5C"
+ACCENT = "#2E86DE"
+INK = "#1F2937"
+AMBER = "#C97B12"
+SUBINK = "#4B5563"
+DPI = 300
+
+plt.rcParams.update({
+    "font.family": "sans-serif",
+    "font.sans-serif": ["Helvetica Neue", "Arial", "DejaVu Sans"],
+    "axes.titlesize": 11,
+    "axes.labelsize": 10,
+    "xtick.labelsize": 9,
+    "ytick.labelsize": 9,
+    "axes.titleweight": "bold",
+    "axes.titlecolor": NAVY,
+})
+
+# Approximate 8x8 grid positions of the 8 ISO-NE zones, derived from
+# space/scripts/figures/iso_ne_map.py. Each zone covers a rectangle of
+# grid cells on the [0..8] x [0..8] coordinate system. row 0 = north,
+# col 0 = west.
+_ZONE_BOXES = [
+    # (zone_code, row_start, row_end, col_start, col_end)
+    ("ME",        0, 4, 4, 8),
+    ("VT",        2, 5, 1, 3),
+    ("NH",        2, 5, 3, 5),
+    ("WCMA",      4, 6, 1, 4),
+    ("NEMA_BOST", 4, 6, 4, 6),
+    ("CT",        5, 7, 1, 4),
+    ("RI",        5, 7, 4, 5),
+    ("SEMA",      5, 7, 5, 7),
+]
+
+
+def overlay_zone_outlines(ax, alpha_box=0.35, alpha_text=0.7):
+    """Draw the 8 ISO-NE zones as semi-transparent rectangles + labels."""
+    for code, r0, r1, c0, c1 in _ZONE_BOXES:
+        ax.add_patch(Rectangle(
+            (c0 - 0.5, r0 - 0.5), c1 - c0, r1 - r0,
+            fill=False, edgecolor=NAVY, linewidth=0.9, alpha=alpha_box,
+            zorder=4,
+        ))
+        ax.text((c0 + c1) / 2 - 0.5, (r0 + r1) / 2 - 0.5, code,
+                ha='center', va='center', fontsize=7, color=NAVY,
+                alpha=alpha_text,
+                bbox=dict(boxstyle='round,pad=0.18', fc='white',
+                          ec='none', alpha=0.55),
+                zorder=5)
+
+
+def add_compass(ax):
+    """Compass + axis labels matching geographic convention.
+
+    Uses ASCII-only labels ('W -> E', 'S -> N') so the figures render
+    identically across macOS Helvetica Neue (no built-in Unicode arrow
+    glyph) and Linux DejaVu Sans on HPC. The N arrow is drawn as a
+    real matplotlib arrow, not a glyph.
+    """
+    ax.set_xlabel("Longitude (W to E)", fontsize=9, color=SUBINK)
+    ax.set_ylabel("Latitude (S to N)", fontsize=9, color=SUBINK)
+    ax.set_xticks(range(GRID))
+    ax.set_yticks(range(GRID))
+    # Tiny N arrow in upper-right corner of plotting area
+    ax.annotate("N", xy=(7.55, -0.45), xycoords='data',
+                fontsize=10, fontweight='bold', color=NAVY, ha='center',
+                zorder=6, annotation_clip=False)
+    ax.annotate("", xy=(7.55, -0.85), xytext=(7.55, -0.18),
+                xycoords='data',
+                arrowprops=dict(arrowstyle="->", color=NAVY, lw=1.0),
+                annotation_clip=False)
+
+
+def mark_peak(ax, attn_2d, color=AMBER):
+    """Annotate the cell of maximum attention with a star."""
+    r, c = np.unravel_index(np.argmax(attn_2d), attn_2d.shape)
+    ax.plot(c, r, marker='*', markersize=15, color=color,
+            markeredgecolor='black', markeredgewidth=0.7, zorder=6)
+    return int(r), int(c)
 
 
 def parse_args():
@@ -218,80 +302,202 @@ def sanity_check_orientation(att_2d_zone_avg, zone_idx, zone_name, out_dir):
     return east, west, north, south
 
 
-def plot_aggregate(attn_global_2d, out_path):
-    """Single 8×8 heatmap, mean over all samples and all 24 future hours."""
-    fig, ax = plt.subplots(figsize=(6, 6))
-    im = ax.imshow(attn_global_2d, origin='upper', cmap='viridis')
-    ax.set_title("Aggregate Attention\n(mean over future hours, history hours, samples)")
-    ax.set_xlabel("West ← Grid Col → East")
-    ax.set_ylabel("South ← Grid Row → North")
-    ax.invert_yaxis()  # not needed since origin='upper' already does it; but be explicit for label match
-    # Actually with origin='upper', row 0 (north) is at top, no invert needed.
-    # Reset:
-    ax.invert_yaxis()  # double-flip = no-op; use explicit set
-    ax.set_xticks(range(8))
-    ax.set_yticks(range(8))
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="attention weight")
+def _sanity_status_line(attn_2d):
+    """Return a one-liner summarising NEMA_BOST east>west sanity for a map."""
+    east = attn_2d[:, 4:].sum()
+    west = attn_2d[:, :4].sum()
+    return f"east-mass {east:.3f} vs west-mass {west:.3f}"
+
+
+def plot_aggregate(attn_global_2d, out_path, n_samples=None):
+    """Single 8×8 heatmap, mean over all samples and all 24 future hours.
+
+    Lead figure: shows where the trained baseline looks on average.
+    Adds zone-outline overlay, compass, peak-cell marker, and a sanity
+    status box.
+    """
+    fig, ax = plt.subplots(figsize=(6.4, 6.4))
+    im = ax.imshow(attn_global_2d, origin='upper', cmap='magma',
+                   interpolation='nearest')
+    overlay_zone_outlines(ax)
+    add_compass(ax)
+    peak = mark_peak(ax, attn_global_2d)
+
+    suffix = f" — {n_samples} samples" if n_samples else ""
+    ax.set_title(
+        f"Aggregate attention — where the model looks{suffix}\n"
+        f"(mean over future hours × history hours × samples)"
+    )
+
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04,
+                 label="attention weight")
+    sanity_text = (f"peak cell (row={peak[0]}, col={peak[1]})\n"
+                   f"{_sanity_status_line(attn_global_2d)}")
+    ax.text(0.02, -0.16, sanity_text, transform=ax.transAxes,
+            fontsize=8, color=SUBINK, va='top',
+            bbox=dict(boxstyle='round,pad=0.3', fc='#F4F6F8',
+                      ec=NAVY, alpha=0.7))
     plt.tight_layout()
-    plt.savefig(out_path, dpi=150)
+    plt.savefig(out_path, dpi=DPI, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"  Saved {out_path}", flush=True)
 
 
 def plot_per_hour(attn_per_hour, out_path):
-    """6 heatmaps for forecast hours 1, 6, 12, 18, 24."""
-    hours = [0, 5, 11, 17, 23]   # = forecast hours t+1, t+6, t+12, t+18, t+24
+    """5 small-multiples for forecast hours t+1, t+6, t+12, t+18, t+24.
+
+    Each panel: zone overlay + compass + peak star. Panels share a
+    colorbar so attention weight is comparable across hours. Above the
+    row, a horizontal arrow indicates time direction.
+    """
+    hours = [0, 5, 11, 17, 23]
     labels = ["t+1", "t+6", "t+12", "t+18", "t+24"]
-    fig, axes = plt.subplots(1, len(hours), figsize=(4 * len(hours), 4))
-    vmin = attn_per_hour[hours].min()
-    vmax = attn_per_hour[hours].max()
+    fig, axes = plt.subplots(1, len(hours), figsize=(3.6 * len(hours), 4.4))
+    vmin = float(attn_per_hour[hours].min())
+    vmax = float(attn_per_hour[hours].max())
+
+    peak_cols = []
     for ax, h, lab in zip(axes, hours, labels):
-        im = ax.imshow(attn_per_hour[h], origin='upper', cmap='viridis',
-                       vmin=vmin, vmax=vmax)
-        ax.set_title(f"Forecast {lab}")
-        ax.set_xticks(range(8))
-        ax.set_yticks(range(8))
-    fig.suptitle("Attention by forecast hour\n(history-aggregated, sample-averaged)")
-    fig.colorbar(im, ax=axes, fraction=0.02, pad=0.04, label="attention weight")
-    plt.savefig(out_path, dpi=150)
+        im = ax.imshow(attn_per_hour[h], origin='upper', cmap='magma',
+                       vmin=vmin, vmax=vmax, interpolation='nearest')
+        overlay_zone_outlines(ax, alpha_box=0.25, alpha_text=0.55)
+        ax.set_title(f"Forecast {lab}", color=NAVY)
+        ax.set_xticks(range(GRID))
+        ax.set_yticks(range(GRID))
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        peak = mark_peak(ax, attn_per_hour[h])
+        peak_cols.append(peak[1])
+
+    # Time-direction arrow overlaid on the suptitle area
+    fig.suptitle("Attention by forecast hour  (history-aggregated, sample-averaged)",
+                 color=NAVY, fontweight='bold')
+    fig.text(0.5, 0.93, "time --->", ha='center',
+             fontsize=10, color=SUBINK, style='italic')
+
+    fig.colorbar(im, ax=axes, fraction=0.018, pad=0.03,
+                 label="attention weight")
+
+    # Bottom annotation: did the peak shift west as forecast hour grew?
+    peak_drift = peak_cols[-1] - peak_cols[0]
+    if peak_drift < 0:
+        verdict = (f"Peak col drifts {abs(peak_drift)} cells westward across the "
+                   f"24h horizon -- consistent with W-to-E weather advection.")
+    elif peak_drift > 0:
+        verdict = (f"Peak col drifts {peak_drift} cells eastward across the "
+                   f"24h horizon -- opposite of the W-to-E advection hypothesis.")
+    else:
+        verdict = "Peak column does not drift across the 24h horizon."
+    fig.text(0.5, 0.04, verdict, ha='center', fontsize=9, color=SUBINK,
+             style='italic')
+    plt.savefig(out_path, dpi=DPI, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"  Saved {out_path}", flush=True)
 
 
 def plot_extreme_vs_mild(attn_extreme, attn_mild, out_path):
-    """Side-by-side comparison."""
-    vmin = min(attn_extreme.min(), attn_mild.min())
-    vmax = max(attn_extreme.max(), attn_mild.max())
-    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-    for ax, attn, title in zip(axes, [attn_mild, attn_extreme],
+    """3-panel: mild | extreme | difference (extreme − mild)."""
+    vmin = float(min(attn_extreme.min(), attn_mild.min()))
+    vmax = float(max(attn_extreme.max(), attn_mild.max()))
+    diff = attn_extreme - attn_mild
+    dlim = float(np.abs(diff).max()) if np.abs(diff).max() > 0 else 1e-3
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.4),
+                             gridspec_kw={"width_ratios": [1, 1, 1]})
+
+    for ax, attn, title in zip(axes[:2],
+                                [attn_mild, attn_extreme],
                                 ["Mild day (Apr 15)", "Extreme heat (Jul 21)"]):
-        im = ax.imshow(attn, origin='upper', cmap='viridis', vmin=vmin, vmax=vmax)
-        ax.set_title(title)
-        ax.set_xticks(range(8))
-        ax.set_yticks(range(8))
-    fig.suptitle("Attention shifts on extreme vs mild days")
-    fig.colorbar(im, ax=axes, fraction=0.02, pad=0.04, label="attention weight")
-    plt.savefig(out_path, dpi=150)
+        im0 = ax.imshow(attn, origin='upper', cmap='magma',
+                        vmin=vmin, vmax=vmax, interpolation='nearest')
+        overlay_zone_outlines(ax, alpha_box=0.25, alpha_text=0.55)
+        ax.set_title(title, color=NAVY)
+        ax.set_xticks(range(GRID))
+        ax.set_yticks(range(GRID))
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        mark_peak(ax, attn)
+
+    im1 = axes[2].imshow(diff, origin='upper', cmap='RdBu_r',
+                         vmin=-dlim, vmax=dlim, interpolation='nearest')
+    overlay_zone_outlines(axes[2], alpha_box=0.25, alpha_text=0.55)
+    axes[2].set_title("Difference (extreme - mild)", color=NAVY)
+    axes[2].set_xticks(range(GRID))
+    axes[2].set_yticks(range(GRID))
+    axes[2].set_xticklabels([])
+    axes[2].set_yticklabels([])
+
+    fig.colorbar(im0, ax=axes[:2], fraction=0.025, pad=0.02,
+                 label="attention weight")
+    fig.colorbar(im1, ax=axes[2], fraction=0.046, pad=0.04,
+                 label="delta attention (extreme - mild)")
+
+    fig.suptitle("Attention shifts on extreme vs mild days",
+                 color=NAVY, fontweight='bold')
+
+    # Annotate where positive deltas concentrate
+    pos_mass_zones = []
+    for code, r0, r1, c0, c1 in _ZONE_BOXES:
+        zone_delta = diff[r0:r1, c0:c1].sum()
+        if zone_delta > 0:
+            pos_mass_zones.append((code, float(zone_delta)))
+    pos_mass_zones.sort(key=lambda x: -x[1])
+    if pos_mass_zones:
+        top = ", ".join(f"{c} (+{d:.3f})" for c, d in pos_mass_zones[:3])
+        fig.text(0.5, 0.02,
+                 f"Extra attention on extreme day concentrates in: {top}",
+                 ha='center', fontsize=9, color=SUBINK, style='italic')
+
+    plt.savefig(out_path, dpi=DPI, bbox_inches='tight', facecolor='white')
     plt.close()
     print(f"  Saved {out_path}", flush=True)
 
 
 def plot_per_zone(attn_per_zone, out_path):
-    """8 zone-conditioned attention maps."""
-    fig, axes = plt.subplots(2, 4, figsize=(16, 8))
-    vmin = min(z.min() for z in attn_per_zone)
-    vmax = max(z.max() for z in attn_per_zone)
+    """8 zone-conditioned attention maps in a 2×4 grid.
+
+    Each panel checks: does the zone's peak attention land inside the
+    zone's actual geographic outline? Panel gets a ✓ or ✗ in its title;
+    the overall pass rate is reported in the suptitle.
+    """
+    fig, axes = plt.subplots(2, 4, figsize=(16, 8.5))
+    vmin = float(min(z.min() for z in attn_per_zone))
+    vmax = float(max(z.max() for z in attn_per_zone))
+
+    zone_to_box = {code: (r0, r1, c0, c1)
+                   for code, r0, r1, c0, c1 in _ZONE_BOXES}
+
+    n_pass = 0
     for ax, attn, zone in zip(axes.flat, attn_per_zone, ZONE_COLS):
-        im = ax.imshow(attn, origin='upper', cmap='viridis', vmin=vmin, vmax=vmax)
-        ax.set_title(zone)
-        ax.set_xticks(range(8))
-        ax.set_yticks(range(8))
-    fig.suptitle("Per-zone attention pattern\n"
-                 "(weighted by prediction-head zone column)")
-    fig.colorbar(im, ax=axes, fraction=0.02, pad=0.04, label="attention weight")
-    plt.savefig(out_path, dpi=150)
+        im = ax.imshow(attn, origin='upper', cmap='magma',
+                       vmin=vmin, vmax=vmax, interpolation='nearest')
+        overlay_zone_outlines(ax, alpha_box=0.20, alpha_text=0.45)
+        peak_r, peak_c = mark_peak(ax, attn)
+
+        # Sanity: peak should fall within (or on the border of) the
+        # zone's own box.
+        r0, r1, c0, c1 = zone_to_box[zone]
+        in_box = (r0 - 1 <= peak_r <= r1) and (c0 - 1 <= peak_c <= c1)
+        n_pass += int(in_box)
+        mark = "[OK]" if in_box else "[FAIL]"
+        ax.set_title(f"{zone}  {mark}", color=NAVY if in_box else "#C0392B")
+        ax.set_xticks(range(GRID))
+        ax.set_yticks(range(GRID))
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+
+    fig.suptitle(
+        f"Per-zone attention pattern — geographic sanity check: "
+        f"{n_pass}/{len(ZONE_COLS)} zones pass\n"
+        f"(weighted by prediction-head zone column)",
+        color=NAVY, fontweight='bold',
+    )
+    fig.colorbar(im, ax=axes, fraction=0.018, pad=0.03,
+                 label="attention weight")
+
+    plt.savefig(out_path, dpi=DPI, bbox_inches='tight', facecolor='white')
     plt.close()
-    print(f"  Saved {out_path}", flush=True)
+    print(f"  Saved {out_path}  (sanity {n_pass}/{len(ZONE_COLS)})", flush=True)
 
 
 def compute_zone_conditioned_attention(model, attn_8x8, future_states):
@@ -467,7 +673,8 @@ def main():
 
     # --- plot all 4 figures ---
     print("Plotting figures ...", flush=True)
-    plot_aggregate(aggregate_2d, out_dir / "aggregate.png")
+    plot_aggregate(aggregate_2d, out_dir / "aggregate.png",
+                   n_samples=len(sample_attns))
     plot_per_hour(per_hour, out_dir / "per_hour.png")
     if mild_attn is not None and extreme_attn is not None:
         plot_extreme_vs_mild(extreme_attn, mild_attn, out_dir / "extreme_vs_mild.png")

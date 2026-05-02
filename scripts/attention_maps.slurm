@@ -7,6 +7,8 @@
 #SBATCH -J attn_maps
 #SBATCH -o /cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/attn_maps_%j.out
 #SBATCH -e /cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/attn_maps_%j.err
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=pang.liu@tufts.edu
 
 # Part 3 Track A — geographic attention map extraction.
 # Loads baseline best.pt, runs forward on 5 representative 2022 samples
