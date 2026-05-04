@@ -25,12 +25,14 @@
 
 ## Highlights
 
-- **Two architectures** trained and compared end-to-end:
-  - **Part 1 baseline** — single-encoder CNN-Transformer (1.75 M params), test MAPE **5.24 %** on last 2 days of 2022 ✅ submitted
-  - **Part 2** — encoder-decoder with cross-attention (~2.29 M params), 🚂 chain training on Tufts HPC
+- **Three trained models** (state of v1.2 release):
+  - **Part 1 baseline** — single-encoder CNN-Transformer (1.75 M params), **test MAPE 5.24 %** on last 2 days of 2022 ⭐ best
+  - **Part 2 v1** — encoder-decoder, history-only cross-attention (2.29 M params), test MAPE **6.82 %**
+  - **Part 2 v2** — encoder-decoder, history + future cross-attention (2.42 M params), test MAPE **9.27 %** ⚠ **undertrained** (13 of 24 planned epochs, ~54 %; 3 SLURM TIMEOUTs)
+- All three checkpoints + cards available at [`pretrained_models/`](pretrained_models/) (HF-style layout).
 - **Self-contained pipeline**: data prep → training → evaluation → inference → real-time demo (Part 3)
 - **Faithful evaluation**: independent reproduction of the TA evaluator harness, byte-for-byte matching MAPE numbers
-- **24h SLURM-resilient training**: 6-job chain with `--dependency=afterany` auto-resumes across multiple wallclock windows
+- **Reproducibility from public sources**: dataset can be rebuilt from ISO Express + NOAA HRRR via [`scripts/data_preparation/`](scripts/data_preparation/) if the cluster mirror disappears.
 
 ---
 
@@ -131,23 +133,23 @@ Full report: [docs/part2_report.md](docs/part2_report.md).
 
 | Model | Params | Overall | ME | NH | VT | CT | RI | SEMA | WCMA | NEMA_BOST |
 |---|---|---|---|---|---|---|---|---|---|---|
-| **Baseline (Part 1)** | 1.75 M | **5.24 %** | 2.31 | 3.69 | 5.95 | 7.28 | 5.27 | 5.44 | 5.87 | 6.09 |
-| Part 2 ED (epoch-6 snapshot) | 2.29 M | 6.82 % | 3.22 | 5.67 | 5.85 | 9.56 | 7.45 | 7.22 | 7.38 | 8.24 |
-| Part 2 ED (final) | 2.29 M | _TBD_ | | | | | | | | |
-| Part 2 ED + future-weather xattn | 2.42 M | _TBD_ | | | | | | | | |
+| **Baseline (Part 1)** ⭐ | 1.75 M | **5.24 %** | 2.31 | 3.69 | 5.95 | 7.28 | 5.27 | 5.44 | 5.87 | 6.09 |
+| Part 2 v1 (history-only xattn, epoch-6 best) | 2.29 M | 6.82 % | 3.22 | 5.67 | 5.85 | 9.56 | 7.45 | 7.22 | 7.38 | 8.24 |
+| Part 2 v2 (hist+future xattn, **undertrained**) | 2.42 M | 9.27 % | 5.91 | 8.51 | 7.78 | 12.53 | 8.25 | 7.38 | 11.60 | 12.20 |
 
-Part 2 numbers fill in after the chain training completes (see [Status](#status)).
+⚠ **v2 caveat.** v2 reached only 13 of 24 planned epochs (~54 %) before the 3-job SLURM chain TIMEOUT'd 3 times. Its 9.27 % is a *partial measurement* — at epoch 13 the cosine LR is still ~9 × 10⁻⁴, well above the small-LR fine-tuning regime where baseline made its big drop. Both v1 and v2 share the same chained-resume LR-scheduler reset bug; details in the [v2 model card](pretrained_models/v2_encoder_decoder_xattn/README.md).
 
 ### Training trajectory (val MAPE, lower = better)
 
-| Epoch | Baseline (val 2021) | Part 2 ED (val 2022) |
-|---|---|---|
-| 0 | 11.22 % | 10.08 % |
-| 4 | 9.16 % | 8.70 % |
-| 6 | 8.76 % | **8.63 %** ✓ |
-| 13 (baseline final) | **6.92 %** | _TBD_ |
+| Epoch | Baseline (val 2021) | v1 (val 2022) | v2 (val 2022, undertrained) |
+|---|---|---|---|
+| 0 | 11.22 % | 10.08 % | _(log overwritten on resume)_ |
+| 4 | 9.16 % | 8.70 % | _(log overwritten on resume)_ |
+| 6 | 8.76 % | **8.63 %** ✓ | _(log overwritten on resume)_ |
+| 8 | — | 9.95 % | 8.95 % (LR reset to 1e-3) |
+| 13 (final for baseline / v2) | **6.92 %** | 10.50 % | **8.72 %** ✓ |
 
-Part 2 tracks slightly ahead of baseline at the same epoch despite training on a harder val set (2022 > 2021 in weather variability) and information-disadvantaged (`use_future_weather_xattn=False` by default).
+Both encoder-decoder variants stall after the LR-scheduler reset that fires on every chained `--resume`; baseline ran continuously for 14 epochs and reached the small-LR fine-tuning regime.
 
 ---
 
@@ -257,10 +259,12 @@ python -m inference.predict \
 
 | Part | Weight | Due | Status |
 |---|---|---|---|
-| Part 1 — Baseline CNN-Transformer | 40 | Apr 15 | ✅ Submitted, test MAPE **5.24 %**, independently verified |
-| Part 2 — Architecture search (encoder-decoder) | 30 | Apr 22 | 🚂 Training (chain `36804770 → 36804771 → 36804772` on Tufts HPC; ablation chain `36804839 → 36804840 → 36804841` queued) |
-| Part 3 — Geographic attention maps + real-time demo | 30 | May 1 | 📋 Planned ([docs/part3_references.md](docs/part3_references.md), [space/](space/)) |
-| Report + presentation | — | May 1 / May 4 | ⏳ Not started |
+| Part 1 — Baseline CNN-Transformer | 40 | Apr 15 | ✅ Done, test MAPE **5.24 %** |
+| Part 2 v1 — Encoder-decoder (history-only xattn) | 30 | Apr 22 | ✅ Done, test MAPE **6.82 %** (best.pt @ epoch 6) |
+| Part 2 v2 — Encoder-decoder (hist+future xattn) | — | — | ⚠ **Undertrained** — best.pt @ epoch 13/24 (~54 %), test MAPE **9.27 %**; 3 SLURM TIMEOUTs (5/1, 5/2, 5/3); see [v2 card](pretrained_models/v2_encoder_decoder_xattn/README.md) |
+| Part 3 Track A — Geographic attention maps | 30 | May 1 | ✅ figures rendered on HPC and pulled |
+| Part 3-2 (bonus) — Real-time deployment study | — | — | ✅ Live at [`huggingface.co/spaces/jeffliulab/predict-power`](https://huggingface.co/spaces/jeffliulab/predict-power) |
+| Report + presentation | — | May 1 / May 4 | ✅ Submitted (`v1.1`); v1.2 release with figures + v2 result is in flight |
 
 ---
 

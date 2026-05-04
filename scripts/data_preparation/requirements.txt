@@ -1,0 +1,20 @@
+# Extra deps for re-fetching the dataset from public sources.
+# Install on top of the main project's requirements.txt.
+
+# HRRR fetcher — wraps NOAA S3, GRIB2 -> xarray
+herbie-data>=2024.1
+
+# Geospatial regridding (HRRR native -> 450x449 NewEngland grid)
+xarray>=2024.1
+netcdf4>=1.6
+cfgrib>=0.9.10
+
+# ISO-NE CSV fetching + parsing
+requests>=2.31
+pandas>=2.0
+beautifulsoup4>=4.12   # for parsing the ISO Express HTML index pages
+
+# Same numpy / torch versions as the main project
+numpy>=1.26,<3
+torch>=2.3.1
+tqdm>=4.66
