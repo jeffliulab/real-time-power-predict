@@ -1,0 +1,48 @@
+[self_eval] starting imports
+[self_eval] torch 2.3.1+cu118 ok (cuda=False)
+[self_eval] numpy ok
+[self_eval] pandas ok
+[self_eval] dataset module ok
+[self_eval] models module ok
+Device    : cpu
+Checkpoint: /cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/cnn_encoder_decoder_xattn/checkpoints/best.pt
+Norm stats: /cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/cnn_encoder_decoder_xattn/norm_stats.pt
+Data root : /cluster/tufts/c26sp1cs0137/data/assignment3_data
+Test slice: last 2 day(s) of 2022
+======================================================================
+Model     : cnn_encoder_decoder (2,419,312 params)
+Best val MAPE at ckpt time: 8.72%
+Prediction starts: ['2022-12-30 00:00', '2022-12-31 00:00']
+# samples: 2
+======================================================================
+  [1/2] 2022-12-30  pred mean=1757 MWh, true mean=1600 MWh
+  [2/2] 2022-12-31  pred mean=1660 MWh, true mean=1514 MWh
+======================================================================
+Overall MAPE : 9.27%
+  ME         5.91%
+  NH         8.51%
+  VT         7.78%
+  CT         12.53%
+  RI         8.25%
+  SEMA       7.38%
+  WCMA       11.60%
+  NEMA_BOST  12.20%
+{
+  "overall_mape": 9.270674526691437,
+  "per_zone_mape": {
+    "ME": 5.913939952850342,
+    "NH": 8.511046409606934,
+    "VT": 7.777836799621582,
+    "CT": 12.532748222351074,
+    "RI": 8.253375053405762,
+    "SEMA": 7.380846977233887,
+    "WCMA": 11.596697807312012,
+    "NEMA_BOST": 12.198904991149902
+  },
+  "dates": [
+    "2022-12-30",
+    "2022-12-31"
+  ],
+  "ckpt": "/cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/cnn_encoder_decoder_xattn/checkpoints/best.pt",
+  "n_samples": 2
+}

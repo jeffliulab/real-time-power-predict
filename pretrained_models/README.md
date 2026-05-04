@@ -5,6 +5,16 @@ All trained on Tufts HPC `c26sp1cs0137` cluster against the
 2019-2023 weather + demand slice at
 `/cluster/tufts/c26sp1cs0137/data/assignment3_data/`.
 
+## Also published on Hugging Face Hub
+
+| Local path                            | HuggingFace repo                                                                              |
+|---------------------------------------|-----------------------------------------------------------------------------------------------|
+| `baseline/`                           | [`jeffliulab/predict-power-baseline`](https://huggingface.co/jeffliulab/predict-power-baseline) |
+| `v1_encoder_decoder/`                 | [`jeffliulab/predict-power-v1`](https://huggingface.co/jeffliulab/predict-power-v1)             |
+| `v2_encoder_decoder_xattn/`           | [`jeffliulab/predict-power-v2-undertrained`](https://huggingface.co/jeffliulab/predict-power-v2-undertrained) |
+
+The HF repos carry the same `best.pt` + `norm_stats.pt` + model-card README. They're convenient if you want to load via `huggingface_hub.hf_hub_download` rather than cloning this whole repo.
+
 ## Quick comparison
 
 | Model | Architecture | Params | val (full year) | test (2022-12-30/31) | Verdict |
