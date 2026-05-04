@@ -671,6 +671,69 @@ def main():
     wcma_2d = per_zone_attn[wcma_idx]
     sanity_check_orientation(wcma_2d, wcma_idx, "WCMA", out_dir)
 
+    # --- dump raw arrays for local re-rendering (no need to re-run on HPC) ---
+    print("Dumping raw .npz arrays for local re-rendering ...", flush=True)
+    raw_dir = out_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    for (label, attn_FH8), pred_entry in zip(sample_attns, sample_predictions):
+        out_npz = raw_dir / f"{label}.npz"
+        np.savez_compressed(
+            out_npz,
+            attn=attn_FH8.cpu().numpy().astype(np.float32),     # (n_heads, F, S, 8, 8)
+            pred_mwh=np.asarray(pred_entry["pred_mwh"], dtype=np.float32),
+            true_mwh=np.asarray(pred_entry["true_mwh"], dtype=np.float32),
+            start_ts=str(pred_entry["ts"]),
+            label=label,
+        )
+        print(f"  Saved {out_npz} ({out_npz.stat().st_size / 1024:.1f} KB)", flush=True)
+
+    # Aggregated views (already computed above) — save as small .npz so the
+    # local renderer can read them directly without recomputing.
+    np.savez_compressed(
+        out_dir / "aggregate.npz",
+        attn=aggregate_2d.astype(np.float32),
+        n_samples=int(len(sample_attns)),
+    )
+    np.savez_compressed(
+        out_dir / "per_hour.npz",
+        attn=per_hour.astype(np.float32),                       # (F=24, 8, 8)
+        forecast_hours_displayed=np.array([1, 6, 12, 18, 24]),
+        indices_displayed=np.array([0, 5, 11, 17, 23]),
+    )
+    if mild_attn is not None and extreme_attn is not None:
+        np.savez_compressed(
+            out_dir / "extreme_vs_mild.npz",
+            mild=mild_attn.astype(np.float32),
+            extreme=extreme_attn.astype(np.float32),
+            diff=(extreme_attn - mild_attn).astype(np.float32),
+            mild_label=str(sample_predictions[0]["label"]) if sample_predictions else "",
+            mild_ts=str(sample_predictions[0]["ts"]) if sample_predictions else "",
+            extreme_label=str(sample_predictions[1]["label"]) if len(sample_predictions) > 1 else "",
+            extreme_ts=str(sample_predictions[1]["ts"]) if len(sample_predictions) > 1 else "",
+        )
+    np.savez_compressed(
+        out_dir / "per_zone.npz",
+        attn=np.stack(per_zone_attn).astype(np.float32),        # (n_zones=8, 8, 8)
+        zones=np.array(ZONE_COLS),
+    )
+    print(f"  Saved aggregate.npz / per_hour.npz / per_zone.npz / extreme_vs_mild.npz", flush=True)
+
+    # Geographic + sample metadata for the cartopy renderer
+    bbox = {"lat_min": 40.5, "lat_max": 47.5, "lon_min": -74.0, "lon_max": -66.0}
+    peak_r, peak_c = np.unravel_index(np.argmax(aggregate_2d), aggregate_2d.shape)
+    metadata = {
+        "bbox": bbox,
+        "grid": {"rows": GRID, "cols": GRID},
+        "samples": [{"label": p["label"], "ts": p["ts"]} for p in sample_predictions],
+        "model_params": int(n_params),
+        "nema_east_vs_west": [float(east), float(west)],
+        "aggregate_min_max": [float(aggregate_2d.min()), float(aggregate_2d.max())],
+        "peak_cell": [int(peak_r), int(peak_c)],
+        "zones": list(ZONE_COLS),
+    }
+    (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
+    print(f"  Saved metadata.json", flush=True)
+
     # --- plot all 4 figures ---
     print("Plotting figures ...", flush=True)
     plot_aggregate(aggregate_2d, out_dir / "aggregate.png",
@@ -680,7 +743,7 @@ def main():
         plot_extreme_vs_mild(extreme_attn, mild_attn, out_dir / "extreme_vs_mild.png")
     plot_per_zone(per_zone_attn, out_dir / "per_zone.png")
 
-    # --- dump diagnostics ---
+    # --- dump diagnostics (legacy format kept for compatibility) ---
     diag = {
         "samples": [d for d in sample_predictions],
         "aggregate_min_max": [float(aggregate_2d.min()), float(aggregate_2d.max())],
