@@ -4,3 +4,7 @@ numpy>=1.26,<3
 pandas>=2.0
 plotly>=5.18
 requests>=2.31
+# Chronos-Bolt foundation model for the optional ensemble path.
+# Only required when the user selects the Ensemble model in the UI;
+# the Baseline-only path does not import it.
+chronos-forecasting>=1.5,<2

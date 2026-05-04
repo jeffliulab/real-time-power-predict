@@ -49,6 +49,7 @@ assert abs(ZONE_PROPORTIONS.sum() - 1.0) < 1e-3
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 SAMPLE_CSV = ASSETS_DIR / "sample_demand_2022.csv"
+SAMPLE_CSV_LONG = ASSETS_DIR / "sample_demand_2022_long.csv"   # 720 h, 2022-12-02..12-31
 
 # In-memory cache: {timestamp_hash: (timestamp, ndarray)}
 _CACHE: dict = {}
@@ -134,8 +135,46 @@ def fetch_recent_demand_mwh(end_dt: Optional[datetime] = None):
     return arr, "sample-2022"
 
 
+def fetch_long_history_mwh(end_dt: Optional[datetime] = None,
+                            hours: int = 720):
+    """Fetch a long per-zone demand history (default 720 h = 30 days) ending
+    at end_dt, for use as Chronos-Bolt context.
+
+    Strategy:
+      1. Read the bundled long-history CSV (720 hourly rows from 2022-12).
+      2. Splice in the 24 freshest hours from the live API / cache (so the
+         tail of the history reflects recent live demand) when available.
+
+    Returns:
+      (array of shape (hours, 8), source_label).  source_label ends in
+      "+live" when the tail 24 h came from the API, "+sample" otherwise.
+    """
+    if end_dt is None:
+        end_dt = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+    # 1. Bundled long-history CSV (always present)
+    if not SAMPLE_CSV_LONG.exists():
+        # Fall back to short CSV repeated; less faithful but never crashes.
+        short = _load_sample_csv()
+        long_arr = np.tile(short, (hours // 24 + 1, 1))[:hours]
+        return long_arr.astype(np.float32), "sample-2022-tiled"
+
+    df = pd.read_csv(SAMPLE_CSV_LONG)
+    long_arr = df[ZONE_COLS].tail(hours).to_numpy(dtype=np.float32)
+    if long_arr.shape != (hours, 8):
+        # Something odd; return what we have and tag.
+        return long_arr.astype(np.float32), "sample-2022-short"
+
+    # 2. Try to splice 24 freshest hours from the live API
+    fresh = _try_iso_ne_api(end_dt)
+    if fresh is not None and fresh.shape == (24, 8):
+        long_arr[-24:] = fresh
+        return long_arr, "sample-2022+live"
+    return long_arr, "sample-2022"
+
+
 if __name__ == "__main__":
     arr, src = fetch_recent_demand_mwh()
-    print(f"source: {src}")
-    print(f"shape: {arr.shape}")
-    print(f"per-zone first hour: {dict(zip(ZONE_COLS, arr[0]))}")
+    print(f"recent (24 h): source={src}, shape={arr.shape}")
+    long_arr, long_src = fetch_long_history_mwh()
+    print(f"long ({len(long_arr)} h): source={long_src}, shape={long_arr.shape}")
