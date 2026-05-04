@@ -1,0 +1,57 @@
+{
+  "bbox": {
+    "lat_min": 40.5,
+    "lat_max": 47.5,
+    "lon_min": -74.0,
+    "lon_max": -66.0
+  },
+  "grid": {
+    "rows": 8,
+    "cols": 8
+  },
+  "samples": [
+    {
+      "label": "mild",
+      "ts": "2022-04-15 00:00:00"
+    },
+    {
+      "label": "heat_wave",
+      "ts": "2022-07-21 00:00:00"
+    },
+    {
+      "label": "cold_snap",
+      "ts": "2022-12-23 00:00:00"
+    },
+    {
+      "label": "extreme",
+      "ts": "2022-08-04 00:00:00"
+    },
+    {
+      "label": "holiday",
+      "ts": "2022-12-25 00:00:00"
+    }
+  ],
+  "model_params": 1753200,
+  "nema_east_vs_west": [
+    0.006315932609140873,
+    0.006811896339058876
+  ],
+  "aggregate_min_max": [
+    2.0502233383012936e-05,
+    0.0017388376872986555
+  ],
+  "peak_cell": [
+    0,
+    2
+  ],
+  "zones": [
+    "ME",
+    "NH",
+    "VT",
+    "CT",
+    "RI",
+    "SEMA",
+    "WCMA",
+    "NEMA_BOST"
+  ]
+}
