@@ -11,7 +11,9 @@
   <a href="https://huggingface.co/spaces/jeffliulab/predict-power">
     <img src="https://img.shields.io/badge/🤗%20Live%20demo-HF%20Space-yellow" alt="Live demo">
   </a>
-  <img src="https://img.shields.io/badge/Submission-Final%20(CS--137)-brightgreen" alt="Status">
+  <a href="https://github.com/jeffliulab/new-england-real-time-power-predict-data">
+    <img src="https://img.shields.io/badge/📦%20Data%20repo-cron--refreshed-blue" alt="Data repo">
+  </a>
 </p>
 
 <p>
@@ -19,7 +21,11 @@
 </p>
 
 <p>
-  <strong>🌐 Live demo</strong>: <a href="https://huggingface.co/spaces/jeffliulab/predict-power">huggingface.co/spaces/jeffliulab/predict-power</a> — runs on real ISO-NE per-zone load + real HRRR weather, with a <strong>7-day rolling backtest</strong> refreshed daily by GitHub Actions cron.
+  <strong>🌐 Live demo</strong>: <a href="https://huggingface.co/spaces/jeffliulab/predict-power">huggingface.co/spaces/jeffliulab/predict-power</a> — runs on real ISO-NE per-zone load + real HRRR weather, with a <strong>7-day rolling backtest</strong> refreshed daily.
+</p>
+
+<p>
+  <strong>📦 Auxiliary data repo</strong>: <a href="https://github.com/jeffliulab/new-england-real-time-power-predict-data">jeffliulab/new-england-real-time-power-predict-data</a> — public, automation-only mirror; GitHub Actions cron rebuilds the rolling backtest every day at 04:00 UTC.
 </p>
 
 </div>
@@ -28,7 +34,7 @@
 
 ## Highlights
 
-This repository contains the **final submission** for Tufts CS-137 Spring 2026 (graded individually as a solo project). Four contributions:
+Four contributions:
 
 - **Part 1 — Baseline CNN-Transformer** (1.75 M params): single-encoder over 7-channel HRRR rasters + per-zone demand + 44-d calendar one-hots → **5.24 % test MAPE** ([model code](space/models/cnn_transformer_baseline.py)).
 - **Part 2a — Encoder-decoder family** (2.29 / 2.42 M params): two architecture-search variants. v1 (history-only cross-attention) hits 6.82 % test MAPE; v2 (hist+future cross-attention) is undertrained at 9.27 %. Both lose to the baseline.
@@ -340,9 +346,7 @@ The author used **Claude Code** (Anthropic; models: Opus 4.7 and Sonnet 4.6) as 
 
 ## Acknowledgments
 
-- **Compute**: Tufts Research Technology HPC (NVIDIA A100-80GB / 40GB / P100)
-- **Course**: Tufts CS-137 — Deep Neural Networks, Spring 2026
-- **Public data**: ISO New England + NOAA HRRR
+- **Public data**: ISO New England (per-zone 5-minute zonal load) + NOAA HRRR (3 km mesoscale weather)
 - **Foundation model**: Chronos-Bolt by Amazon (Apache-2.0)
-
-**Author**: Pang Liu (`pliu07`) · solo submission · all components attributable to a single contributor (see report's *Contribution Statement*).
+- **Compute**: NVIDIA A100-80GB / 40GB / P100 for training; HuggingFace Spaces cpu-basic for serving
+- **Author**: Pang Liu (`pliu07`)
