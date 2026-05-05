@@ -29,6 +29,15 @@ Headline offline number: **5.24 % MAPE** baseline / **4.21 % MAPE** ensemble (wi
 
 1. **Real-time tab**: every click pulls real ISO-NE per-zone demand + real HRRR weather and runs the ensemble. Expect ~3-5 min on the very first click of a fresh Space (cold HRRR cache + Chronos load), then ~10-30 s on subsequent clicks within the same uptime session.
 2. **Backtest tab**: 7 daily forecasts on the most recent fully-published days, with full predict-vs-truth comparisons + per-zone MAPE table. Refreshed daily by a GitHub Actions cron in the [auxiliary data repo](https://github.com/jeffliulab/new-england-real-time-power-predict-data).
+3. **About tab**: a live MAPE summary (refreshed every cron run, no hardcoded numbers) plus the static demo description and figures from the report.
+
+## Recent live performance
+
+Live MAPE numbers (per-model, per-zone, plus the 7-day window endpoints + `built_at` timestamp) are rendered inside the Space's About tab and refreshed every day at 04:00 UTC by the GitHub Actions cron in [the auxiliary data repo](https://github.com/jeffliulab/new-england-real-time-power-predict-data). To inspect raw values without launching the Space:
+
+```bash
+curl -s https://raw.githubusercontent.com/jeffliulab/new-england-real-time-power-predict-data/main/data/last_built.json
+```
 
 ## Links
 

@@ -409,6 +409,34 @@ def _backtest_bars():
     return fig
 
 
+def _live_performance_md() -> str:
+    """Dynamic 'live performance' block for the About tab. Reads the
+    current backtest summary from BACKTEST (loaded at startup from the
+    auxiliary data repo) so numbers always reflect the latest cron run."""
+    if BACKTEST is None:
+        return ("_Live performance numbers unavailable — the auxiliary data "
+                "repo is unreachable. The Backtest tab will show a bundled "
+                "fallback snapshot._\n\n---\n")
+    s = BACKTEST["summary"]
+    period = BACKTEST.get("data_period", {})
+    built_at = BACKTEST.get("built_at", "?")[:16]
+    first_day = period.get("first_forecast_start", "?")[:10]
+    last_day = period.get("last_forecast_start", "?")[:10]
+    return (
+        f"### 📊 Live performance — refreshed daily at 04:00 UTC\n\n"
+        f"_Window: {first_day} → {last_day} · refreshed {built_at} UTC_\n\n"
+        f"| Model | Overall MAPE on the last 7 days |\n|---|---|\n"
+        f"| Baseline (real HRRR) | {s['baseline']['overall']:.2f} % |\n"
+        f"| Chronos-Bolt-mini (zero-shot) | {s['chronos']['overall']:.2f} % |\n"
+        f"| **Ensemble (per-zone α)** | **{s['ensemble']['overall']:.2f} %** |\n\n"
+        f"_See the **Backtest** tab for the full per-zone breakdown. "
+        f"Numbers above are computed end-to-end on real ISO-NE per-zone "
+        f"load + real HRRR f00 analyses + HRRR f01..f24 forecasts (no "
+        f"future leakage); read the prose below for why these are higher "
+        f"than the offline 4.21 % headline._\n\n---\n"
+    )
+
+
 # =====================================================================
 #  Gradio UI
 # =====================================================================
@@ -448,16 +476,32 @@ with gr.Blocks(title="ISO-NE Energy Demand Forecast",
                                       label="Overall MAPE")
             gr.Markdown(_backtest_summary_md())
         with gr.Tab("About"):
+            gr.Markdown(_live_performance_md())
             gr.Markdown(ABOUT)
+            gr.Markdown("### Figures from the report")
             with gr.Row():
                 gr.Image(str(ASSETS / "iso_ne_map.png"),
                          label="ISO-NE 8 load zones",
                          show_label=True, height=320)
                 gr.Image(str(ASSETS / "baseline_per_zone.png"),
-                         label="Per-zone test MAPE (cluster, real weather)",
+                         label="Per-zone test MAPE (Part 1 baseline, "
+                               "real HRRR cluster runs)",
+                         show_label=True, height=320)
+            with gr.Row():
+                gr.Image(str(ASSETS / "comparison_table.png"),
+                         label="All model variants compared on the "
+                               "2-day 2022 self-eval slice",
+                         show_label=True, height=320)
+                gr.Image(str(ASSETS / "ensemble_bars.png"),
+                         label="Foundation-model ensemble: per-zone α "
+                               "ablation (Chronos-Bolt-base)",
                          show_label=True, height=320)
             gr.Image(str(ASSETS / "architecture.png"),
                      label="Baseline CNN-Transformer architecture",
+                     show_label=True)
+            gr.Image(str(ASSETS / "attn_aggregate.png"),
+                     label="Attention diagnostic: aggregate attention map "
+                           "on the New England basemap (Part 3)",
                      show_label=True)
 
     run_btn.click(live_forecast,
