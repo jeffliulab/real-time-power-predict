@@ -68,11 +68,22 @@ def denormalize_demand(z: np.ndarray, norm_stats: dict) -> np.ndarray:
     return (z * std + mean).astype(np.float32)
 
 
+def normalize_weather(raster: np.ndarray, norm_stats: dict) -> np.ndarray:
+    """(T, H, W, 7) raw HRRR -> (T, H, W, 7) z-scored using training stats.
+
+    norm_stats stores per-channel mean/std as (1, 1, 1, 7) tensors.
+    """
+    mean = norm_stats["weather_mean"].cpu().numpy().reshape(1, 1, 1, -1)
+    std = norm_stats["weather_std"].cpu().numpy().reshape(1, 1, 1, -1)
+    return ((raster - mean) / std).astype(np.float32)
+
+
 def synthetic_weather_z(history_len: int = HISTORY_LEN,
                         future_len: int = FUTURE_LEN) -> np.ndarray:
     """Return a (S+24, H, W, C) array of zeros (training-mean weather
-    in z-score space). The baseline still produces calibrated per-zone
-    output because the tabular branch carries demand+calendar info."""
+    in z-score space). Kept as a fallback when the live HRRR fetcher
+    fails (e.g. no network, S3 outage); the model is degraded but still
+    produces calibrated output from demand + calendar."""
     return np.zeros((history_len + future_len, WEATHER_H, WEATHER_W, WEATHER_C),
                     dtype=np.float32)
 
@@ -83,20 +94,38 @@ def run_forecast(model: torch.nn.Module,
                  hist_cal: np.ndarray,
                  future_cal: np.ndarray,
                  norm_stats: dict,
+                 hist_weather_raw: np.ndarray,
+                 future_weather_raw: np.ndarray,
                  device: str = "cpu") -> np.ndarray:
-    """Run the baseline on synthetic weather + real demand history.
+    """Run the baseline forecast.
 
     Args:
-      hist_demand_mwh: (24, 8) recent ISO-NE per-zone demand in MWh.
-      hist_cal:        (24, 44) calendar features for the history window.
-      future_cal:      (24, 44) calendar features for the next 24 h.
+      hist_demand_mwh:    (24, 8) recent ISO-NE per-zone demand in MWh.
+      hist_cal:           (24, 44) calendar features for the history window.
+      future_cal:         (24, 44) calendar features for the next 24 h.
+      hist_weather_raw:   (24, 450, 449, 7) RAW HRRR f00 analyses for the
+                          history window. Will be z-scored internally.
+      future_weather_raw: (24, 450, 449, 7) RAW HRRR f01..f24 forecasts
+                          (or analyses, if available) for the future
+                          window. Will be z-scored internally.
 
     Returns:
       (24, 8) forecast in MWh.
     """
-    weather = synthetic_weather_z()                           # (48, H, W, C)
-    hist_w = torch.from_numpy(weather[:HISTORY_LEN]).unsqueeze(0).to(device)
-    fut_w = torch.from_numpy(weather[HISTORY_LEN:]).unsqueeze(0).to(device)
+    if hist_weather_raw.shape != (HISTORY_LEN, WEATHER_H, WEATHER_W, WEATHER_C):
+        raise ValueError(
+            f"hist_weather_raw shape {hist_weather_raw.shape} != "
+            f"({HISTORY_LEN}, {WEATHER_H}, {WEATHER_W}, {WEATHER_C})")
+    if future_weather_raw.shape != (FUTURE_LEN, WEATHER_H, WEATHER_W, WEATHER_C):
+        raise ValueError(
+            f"future_weather_raw shape {future_weather_raw.shape} != "
+            f"({FUTURE_LEN}, {WEATHER_H}, {WEATHER_W}, {WEATHER_C})")
+
+    hist_w_z = normalize_weather(hist_weather_raw, norm_stats)
+    fut_w_z = normalize_weather(future_weather_raw, norm_stats)
+
+    hist_w = torch.from_numpy(hist_w_z).unsqueeze(0).to(device)
+    fut_w = torch.from_numpy(fut_w_z).unsqueeze(0).to(device)
 
     hist_y_z = normalize_demand(hist_demand_mwh, norm_stats)
     hist_y = torch.from_numpy(hist_y_z).unsqueeze(0).to(device)

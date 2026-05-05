@@ -1,0 +1,17 @@
+# Pinned deps for build_rolling_backtest.py (used by GitHub Actions in
+# the data repo new-england-real-time-power-predict-data).
+#
+# These match the HF Space's space/requirements.txt where overlapping;
+# additions are: chronos-forecasting (Space loads this lazily) and the
+# herbie/cfgrib stack (Space also has them).
+
+torch>=2.5,<3
+numpy>=1.26,<3
+pandas>=2.0
+scipy>=1.11
+requests>=2.31
+herbie-data>=2024.1
+cfgrib>=0.9.10
+xarray>=2024.0
+eccodes>=2.40
+chronos-forecasting>=1.5,<2

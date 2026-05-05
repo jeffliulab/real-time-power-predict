@@ -2,9 +2,16 @@ gradio>=5.30,<6
 torch>=2.5,<3
 numpy>=1.26,<3
 pandas>=2.0
+scipy>=1.11
 plotly>=5.18
 requests>=2.31
-# Chronos-Bolt foundation model for the optional ensemble path.
-# Only required when the user selects the Ensemble model in the UI;
-# the Baseline-only path does not import it.
+
+# Real-time HRRR weather (fetched on-demand for live forecasts and as
+# the input to the rolling backtest cache that ships from the data repo).
+herbie-data>=2024.1
+cfgrib>=0.9.10
+xarray>=2024.0
+eccodes>=2.40
+
+# Chronos-Bolt foundation model for the per-zone ensemble path.
 chronos-forecasting>=1.5,<2
