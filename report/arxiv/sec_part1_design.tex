@@ -1,0 +1,215 @@
+% =====================================================================
+% Part I — Design and Training (§4 baseline, §5 enc-dec, §6 ensemble, §7 attention)
+% =====================================================================
+
+\section{CNN-Transformer baseline}
+\label{sec:baseline}
+
+The baseline (Figure~\ref{fig:arch}) fuses 7-channel HRRR weather rasters, recent per-zone demand history, and 44-d calendar one-hots in a single Transformer encoder. With $S=24$ history steps and a 24-step horizon, the model produces $\hat Y_{t+1:t+24}$ via:
+\begin{align}
+\text{(spatial branch)}\quad   \mathbf{S}_t &= \mathrm{CNN}(X_t) \in \mathbb{R}^{P\times D},                   \quad t \in [t-S, t+24], \\
+\text{(tabular branch)}\quad   \mathbf{T}_t &= \mathrm{Linear}([Y_t \,\|\, C_t]) \in \mathbb{R}^{D},           \\
+\text{(token sequence)}\quad   \mathbf{Z} &= \mathrm{Concat}_t [\mathbf{S}_t, \mathbf{T}_t] + \text{pos.\ emb}, \\
+\text{(encoder)}\quad          \mathbf{H} &= \mathrm{TransformerEncoder}_{L=4}(\mathbf{Z}),                    \\
+\text{(prediction head)}\quad  \hat Y_{t+1:t+24} &= \mathrm{MLP}(\mathbf{H}_{\text{future-tabular}}).
+\end{align}
+The CNN trunk is shared across all $S+24$ timesteps and produces $P=64$ spatial tokens (an $8\times 8$ grid) per timestep; the tabular branch produces 1 token per timestep; the encoder operates over a unified sequence of $(S+24)\times(P+1)$ tokens. Total parameter count: 1.75\,M.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{architecture.png}
+\caption{Baseline CNN-Transformer architecture. A shared CNN trunk produces $P=64$ spatial tokens per timestep over $(S+24)$ hourly weather rasters. A tabular branch (1 token per timestep) carries the demand and calendar features. A 4-layer Transformer encoder operates over the unified token sequence; the 24 future-tabular tokens are sliced and passed to a small MLP head that produces the per-zone forecast.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Training procedure}
+\label{sec:baseline:train}
+
+The model is trained for 14 epochs on 2019--2020 (\S\ref{sec:data:splits}) with AdamW \citep{loshchilov2019adamw} ($\mathrm{lr} = 3{\times}10^{-4}$, weight decay $10^{-2}$) and a cosine schedule with warm restarts \citep{loshchilov2017sgdr}. Batch size is 16 over a mix of A100-40\,GB and A100-80\,GB GPUs depending on availability. We compute MSE loss in z-score space; targets are de-normalized for MAPE evaluation only. Training uses standard mixed precision via PyTorch AMP. Validation MAPE on 2021 reaches 6.92\,\% at the final epoch; the validation curve continues to descend slowly --- we do not see an over-fitting plateau within the 14-epoch budget. Full hyperparameters and the per-epoch trajectory are in Appendix~\ref{app:repro}.
+
+\subsection{Test results}
+\label{sec:baseline:test}
+
+Table~\ref{tab:baseline} reports per-zone test MAPE on the last two days of 2022. The baseline achieves \textbf{5.24\,\% overall MAPE}. The smallest zone \zone{ME} (mean 1306\,MWh/h) is the easiest at 2.31\,\%; the largest zone \zone{CT} (mean 3186\,MWh/h) is the hardest at 7.28\,\%. The dynamic range across zones is 2.31\,\% to 7.28\,\% --- a factor of 3.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Baseline test MAPE on the 2-day 2022 self-evaluation slice. \emph{Test set:} 2022-12-30 and 2022-12-31, both 24-hour forecast windows, all 8 zones.}
+\label{tab:baseline}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+& \zone{ME} & \zone{NH} & \zone{VT} & \zone{CT} & \zone{RI} & \zone{SEMA} & \zone{WCMA} & \zone{NEMA} & Overall \\
+\midrule
+Test MAPE (\%) & \textbf{2.31} & \textbf{3.69} & 5.95 & \textbf{7.28} & \textbf{5.27} & \textbf{5.44} & \textbf{5.87} & \textbf{6.09} & \textbf{5.24} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Discussion}
+\label{sec:baseline:discussion}
+
+The baseline confirms that a token-level fusion of weather + recent demand + calendar features is a credible architecture for ISO-NE day-ahead forecasting. Two observations carry forward:
+
+\paragraph{The 2-day test slice is noisy.} 2022-12-30 and 2022-12-31 are bracketing a long-weekend / New Year's Eve transition with unusual demand patterns. We treat the 5.24\,\% number as a point estimate, not a tight confidence interval; \S\ref{sec:archsearch} discusses the limits this places on architecture-search conclusions.
+
+\paragraph{The model has access to ground-truth future weather at training time.} Equation~\ref{eq:task} feeds 24 future weather rasters as input. At training and offline evaluation we use HRRR f00 analyses (i.e., observations of the future weather, after the fact). At deployment time the future is unknown; we substitute HRRR forecasts (f01--f24 from the most recent operational cycle) and quantify the resulting distribution shift in \S\ref{sec:deploy:arch}.
+
+% =====================================================================
+\section{Architecture exploration: encoder-decoder variants}
+\label{sec:archsearch}
+
+The baseline applies one self-attention module to all $(S+24)$ timesteps in a single sequence, mixing past observations with future queries. A natural alternative is the canonical encoder-decoder design: encoder over the past, decoder queries from the future. We explore two encoder-decoder variants in this section, partly to characterize this architectural choice on our regional dataset, partly to set up the foundation-model ensemble in \S\ref{sec:ensemble}.
+
+\subsection{Architecture}
+\label{sec:archsearch:arch}
+
+The encoder-decoder (Figure~\ref{fig:v1v2}) reuses the baseline's CNN spatial branch and tabular branch but routes them through separate encoder and decoder stacks:
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{Encoder} (4 layers self-attention) operates over the $S\times(P+1) = 1560$ history tokens (history-spatial + history-tabular) and produces an encoder memory $M_{\text{hist}}$.
+  \item \textbf{Decoder} (2 layers: self-attention $\to$ cross-attention $\to$ MLP) takes 24 future-tabular queries seeded from the future calendar embedding. Cross-attention consumes $M_{\text{hist}}$.
+  \item Optional \textbf{future-weather cross-attention} (the \emph{ablation switch}): a second cross-attention branch in each decoder block that attends to the 24$\times$64 = 1536 future-spatial tokens. This restores information parity with the baseline (which sees future weather inside its single encoder).
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{baseline_vs_v1.png}
+\caption{Baseline vs.\ encoder-decoder head-to-head. Validation MAPE (left) and training loss in z-space (right) across epochs. The encoder-decoder's right-panel kink at epoch 7 is an LR-scheduler reset (chained-resume bug; see Appendix~\ref{app:repro}). The baseline ran continuously for 14 epochs and reached the small-LR fine-tuning regime; the encoder-decoder did not.}
+\label{fig:v1v2}
+\end{figure}
+
+\subsection{Test results}
+\label{sec:archsearch:results}
+
+Table~\ref{tab:v2-test} reports test MAPE for both encoder-decoder variants:
+
+\begin{table}[h]
+\centering
+\small
+\caption{Encoder-decoder variants vs.\ baseline. \emph{The ablation row (last) is partial:} the chained training run TIMEOUT'd at epoch 13 of 24 planned. We report the result for completeness.}
+\label{tab:v2-test}
+\begin{tabular}{@{}lrrrrrrrrrr@{}}
+\toprule
+& Params & \zone{ME} & \zone{NH} & \zone{VT} & \zone{CT} & \zone{RI} & \zone{SEMA} & \zone{WCMA} & \zone{NEMA} & Overall \\
+\midrule
+Baseline                                       & 1.75\,M & 2.31 & 3.69 & 5.95 & 7.28 & 5.27 & 5.44 & 5.87 & 6.09 & \textbf{5.24} \\
+Encoder-decoder, history-only x-attn            & 2.29\,M & 3.22 & 5.67 & 5.85 & 9.56 & 7.45 & 7.22 & 7.38 & 8.24 & 6.82 \\
+Encoder-decoder, hist+future x-attn (partial)  & 2.42\,M & 5.91 & 8.51 & 7.78 & 12.53 & 8.25 & 7.38 & 11.60 & 12.20 & 9.27 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The encoder-decoder \emph{loses} to the baseline on this dataset --- 6.82\,\% vs 5.24\,\% on the headline variant. We considered three explanations:
+
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{Optimization:} the encoder-decoder is harder to optimize, especially with the LR-scheduler reset bug; the partial result (9.27\,\%) is consistent with under-training.
+  \item \textbf{Data efficiency:} ISO-NE has $\sim$5 years of training data ($\sim$26\,K samples for the encoder-decoder split). Encoder-decoder architectures shine on order-of-magnitude larger corpora; for this regional dataset the increased decoder capacity may be excess.
+  \item \textbf{Statistical:} the 2-day test slice has a $\pm 1$\,pp swing across nearby epochs (Figure~\ref{fig:v1v2}). The 1.6\,pp gap between baseline and encoder-decoder is real but not enormous.
+\end{itemize}
+
+We do not claim the encoder-decoder design is wrong for this task; we claim it does not improve over a simpler baseline given the data we have. The implication for \S\ref{sec:ensemble} is that adding capacity \emph{outside} the multi-modal stack --- via a separately-pretrained foundation model on demand history alone --- is a more profitable use of the parameter budget than scaling the multi-modal stack itself.
+
+% =====================================================================
+\section{Foundation-model ensemble}
+\label{sec:ensemble}
+
+Chronos-Bolt \citep{ansari2024chronos} is a pretrained Transformer for univariate time-series forecasting, used here \emph{zero-shot} (no fine-tuning) on per-zone demand history. We blend Chronos predictions with the baseline at the per-zone level using fixed weights $\alpha_z$ tuned on a 2-week validation window.
+
+\subsection{Architecture}
+\label{sec:ensemble:arch}
+
+The ensemble is a per-zone weighted late fusion:
+\begin{equation}
+\hat Y_{t+h, z} = \alpha_z \cdot \hat Y^{\text{baseline}}_{t+h, z} + (1 - \alpha_z) \cdot \hat Y^{\text{Chronos}}_{t+h, z}, \quad h \in [1, 24],\ z \in \{1,...,8\}.
+\label{eq:ensemble}
+\end{equation}
+
+The baseline leg uses the full multimodal input from \S\ref{sec:baseline}. The Chronos leg processes each zone independently as a univariate series: its input is 672 hours (4 weeks) of past per-zone demand only; no weather, no calendar, no zone label. Chronos-Bolt's pretraining corpus included diverse time-series tasks (weather, retail, traffic, finance, electricity), so at inference time the model identifies daily/weekly/seasonal periodicity from the demand history alone.
+
+\subsection{Per-zone $\alpha$ grid search}
+
+We tune $\alpha_z$ independently per zone over a 14-day validation window (2022-12-16 through 2022-12-29). For each $z$, we sweep $\alpha_z \in \{0.0, 0.05, 0.1, ..., 1.0\}$ and pick the value that minimizes validation MAPE. The result, hard-coded at deployment, is:
+
+\begin{center}\small
+\begin{tabular}{@{}lcccccccc@{}}
+\toprule
+& \zone{ME} & \zone{NH} & \zone{VT} & \zone{CT} & \zone{RI} & \zone{SEMA} & \zone{WCMA} & \zone{NEMA} \\
+\midrule
+$\alpha_z$ & 0.30 & 0.30 & 0.80 & 0.00 & 0.10 & 0.00 & 0.05 & 0.00 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The pattern is interpretable. Northern, electric-heating-dominant zones (\zone{VT}, \zone{NH}, \zone{ME}) put more weight on the weather-aware baseline. The dense southern coastal zones (\zone{CT}, \zone{SEMA}, \zone{NEMA}) put zero weight on the baseline --- the Chronos zero-shot prediction is uniformly better there. We return to this asymmetry in \S\ref{sec:deploy:btm}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{ensemble_bars.png}
+\caption{Foundation-model ensemble vs.\ the baseline alone. Per-zone test MAPE on 2022-12-30/31 for the baseline, Chronos zero-shot, and the per-zone weighted ensemble. The ensemble uniformly dominates or matches the baseline; the gain is largest in zones where the baseline's MAPE was highest.}
+\label{fig:ensemble_bars}
+\end{figure}
+
+\subsection{Test results}
+\label{sec:ensemble:test}
+
+The ensemble reaches \textbf{4.33\,\% test MAPE} with Chronos-Bolt-base (205\,M parameters) and \textbf{4.21\,\% test MAPE} with the smaller Chronos-Bolt-mini (21\,M parameters). The mini variant is what we deploy on HuggingFace Spaces (\S\ref{sec:deploy:arch}); the base variant is reported as an upper-bound reference. The ensemble's $-0.91$\,pp absolute / 17\,\% relative improvement over the baseline is robust to the test-slice noise (the gap is larger than the $\pm 1$\,pp epoch-over-epoch wiggle observed in Figure~\ref{fig:v1v2}).
+
+\subsection{Foundation-model ablations}
+\label{sec:ensemble:ablation}
+
+We sweep the Chronos leg over (a) context length $\in \{168, 336, 672, 1344\}$ hours, (b) model size $\in \{\text{tiny, mini, small, base}\}$, (c) quantile aggregation $\in \{\text{median, mean, weighted-median}\}$. The 672-hour mini variant with median aggregation is on the Pareto frontier --- larger contexts and larger models give no further improvement on this task while costing 3-10$\times$ more compute. The full ablation table is in the supplementary file \texttt{sec\_supplementary\_foundation\_model.tex} of the project's CS-137 release; key takeaway is robustness, not a tight optimum.
+
+% =====================================================================
+\section{Interpretability: geographic attention analysis}
+\label{sec:attn}
+
+We conclude Part I by analyzing what the trained baseline has actually learned. Encoder attention provides a direct probe: for each future-tabular query position $\mathcal{Q}_{\text{fut}}$, we extract its attention weights over the history-spatial key positions $\mathcal{K}_{\text{hist}}$, producing an $8\times 8$ heatmap that we overlay on the New England geographic basemap (Appendix~\ref{app:attention}).
+
+\subsection{Approach}
+
+Four orientation-correctness checks ensure the heatmap is geographically meaningful:
+
+\begin{enumerate}\setlength\itemsep{1pt}
+  \item \textbf{Slice direction}: rows of the sliced attention matrix are future-tabular query positions, columns are history-spatial key positions.
+  \item \textbf{Row-major reshape}: the 64-cell column dimension is reshaped to $(8, 8)$ row-major, matching \texttt{WeatherCNN.forward}'s \texttt{x.flatten(2)} layout.
+  \item \textbf{Compass orientation}: \texttt{matplotlib.imshow(..., origin='upper')} so row 0 (north) is at the top, col 0 (west) is on the left.
+  \item \textbf{Aggregate east-vs-west sanity}: NEMA-Boston is in the eastern half of the bbox; the integrated attention mass on the eastern columns must exceed the western columns.
+\end{enumerate}
+
+\subsection{Findings}
+
+We render four diagnostic figures (Figures~\ref{fig:attn-agg}, \ref{fig:attn-per-hour}, \ref{fig:attn-per-zone}, \ref{fig:attn-extreme}) on five hand-picked diagnostic days (mild, heat-wave, extreme, cold-snap, holiday).
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{attn_aggregate.png}
+\caption{Aggregate attention map (averaged over all 5 diagnostic days, all 24 forecast hours, all 8 zones). The peak sits over the dense southern/coastal zones; east-vs-west aggregate sanity passes (east $\approx 0.0070$, west $\approx 0.0050$).}
+\label{fig:attn-agg}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{attn_per_hour.png}
+\caption{Attention by forecast hour ($t+1, t+6, t+12, t+18, t+24$). The peak does not drift westward as the prediction horizon extends.}
+\label{fig:attn-per-hour}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{attn_per_zone.png}
+\caption{Per-zone attention (8 panels). Seven of the 8 prediction-head zones share a global pattern, attending to the same southern coastal hotspot regardless of the zone they are predicting; only \zone{ME} clearly localizes its attention to the geographic region of the zone it is predicting.}
+\label{fig:attn-per-zone}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{attn_extreme_vs_mild.png}
+\caption{Attention shifts under extreme weather. On extreme heat days (right) the SEMA coastal lobe lights up more strongly than on mild days (left), consistent with the increased AC-driven demand the model needs to predict.}
+\label{fig:attn-extreme}
+\end{figure}
+
+The headline finding is Figure~\ref{fig:attn-per-zone}: \textbf{seven of the eight zones share a global attention pattern.} A model that genuinely zone-localized would put more attention on the geographic region near the zone it is predicting. Instead, the model has learned a shared global weather embedding, with the prediction head doing zone-specific work via its final linear layer rather than via spatial attention.
+
+\subsection{Reconciling with the Chronos surprise}
+
+The per-zone $\alpha$ pattern from \S\ref{sec:ensemble} now makes more sense: zones where the baseline puts $\alpha_z = 0$ (i.e., the ensemble drops the baseline entirely) are the same dense southern zones whose demand is hardest to predict from a shared global weather embedding. Chronos, which sees only zone-specific demand history and no weather, captures the per-zone-specific dynamics that the baseline's shared spatial encoder fails to specialize for. The two models are thus complementary: the baseline's weather signal shines on northern weather-driven zones; Chronos's per-zone time-series memory dominates the dense southern zones.

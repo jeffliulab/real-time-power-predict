@@ -1,0 +1,42 @@
+% =====================================================================
+% Appendix B — ISO-NE cookie-prime endpoint
+% =====================================================================
+
+\section{ISO-NE cookie-prime endpoint and zone-ID mapping}
+\label{app:isone}
+
+ISO New England exposes a public 5-minute estimated zonal load CSV at
+\begin{quote}\small\texttt{https://www.iso-ne.com/transform/csv/fiveminuteestimatedzonalload?start=YYYYMMDD\&end=YYYYMMDD}\end{quote}
+Direct \texttt{curl} to this endpoint returns HTTP 403. The endpoint requires a session cookie that is set when a browser visits any normal ISO-NE report page (e.g.\ the gen-fuel-mix tree). The deployed fetcher (\texttt{space/iso\_ne\_zonal.py}) primes that cookie at session start and reuses it for all subsequent CSV requests:
+
+\begin{lstlisting}[language=Python, caption={Cookie-prime trick (extract).}, label={lst:isone}]
+import requests
+session = requests.Session()
+session.get(
+    "https://www.iso-ne.com/isoexpress/web/reports/operations/-/tree/gen-fuel-mix"
+)  # primes session cookie
+url = (
+    "https://www.iso-ne.com/transform/csv/fiveminuteestimatedzonalload"
+    f"?start={yyyymmdd}&end={yyyymmdd}"
+)
+r = session.get(url, timeout=15)
+\end{lstlisting}
+
+\paragraph{Zone-ID mapping.} The CSV uses ISO-NE's internal numeric zone IDs, which we map to the canonical column names:
+
+\begin{center}\small
+\begin{tabular}{@{}rl@{\hspace{1.5em}}rl@{}}
+\toprule
+ID & Column & ID & Column \\
+\midrule
+4001 & \zone{ME}   & 4005 & \zone{RI}        \\
+4002 & \zone{NH}   & 4006 & \zone{SEMA}      \\
+4003 & \zone{VT}   & 4007 & \zone{WCMA}      \\
+4004 & \zone{CT}   & 4008 & \zone{NEMA\_BOST}\\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{5-min $\to$ hourly aggregation.} The native CSV has 12 5-minute samples per hour per zone. We resample to hourly mean to match the model's input shape \texttt{(24, 8)}. Publication lag is typically $\sim$1--2 hours: the most recent fully-published hour at request time is approximately \texttt{now() - 2h}.
+
+\paragraph{Why this trick works.} The cookie-prime pattern is borrowed from the open-source \texttt{gridstatus.io} library, which uses the same approach for several ISO-NE endpoints. The cookie is short-lived (session duration only); we re-prime on each Python process start. There is no rate-limit on the documented endpoint as of writing; we have observed no 429s in production.

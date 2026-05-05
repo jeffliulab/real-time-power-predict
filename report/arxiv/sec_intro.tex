@@ -1,0 +1,48 @@
+% =====================================================================
+% Abstract + §1 Introduction
+% =====================================================================
+
+\begin{abstract}
+\noindent
+We design, train, and publicly deploy a 24-hour day-ahead per-zone electricity demand forecasting system for the eight load zones of ISO New England (ISO-NE). The model is a 1.75\,M-parameter multi-modal CNN-Transformer (HRRR weather rasters + recent demand + 44-d calendar features) blended with a zero-shot Chronos-Bolt foundation model under per-zone weighted late fusion. On a held-out 2-day 2022 self-evaluation slice, the baseline reaches 5.24\,\% MAPE and the ensemble reaches 4.33\,\% MAPE (--0.91\,pp / 17\,\% relative reduction); the smaller Chronos-Bolt-mini variant is even slightly better at 4.21\,\% MAPE despite using $\sim$10$\times$ fewer parameters than Bolt-base.
+
+The system is then deployed as a public web demo (HuggingFace Space) with an auxiliary GitHub-Actions-driven data repository that rebuilds a strict-discipline 7-day rolling backtest on real public sources (NOAA HRRR + ISO-NE 5-min zonal load + Chronos-Bolt-mini) every 24 hours. We pipe the same code that produced the 2022 evaluation through the live deployment and validate equivalence: re-running the deployed pipeline on a date inside the training window (2022-12-30) reproduces the cluster's stored prediction to within 0.13 percentage points (6.41\,\% live vs 6.54\,\% cluster).
+
+In May 2026 the live 7-day backtest reports overall MAPE of 25.17\,\% (baseline) / 13.45\,\% (Chronos zero-shot) / 14.51\,\% (ensemble) --- four to five times worse than the headline 2022 result. The per-zone breakdown localizes the degradation: northern zones (ME 10\,\%, NEMA-Boston 7\,\%) remain well-behaved, but the southern coastal zones (RI 63\,\%, SEMA 72\,\%, WCMA 78\,\%) collapse. We show this signature correlates with state-level rooftop / behind-the-meter (BTM) solar incentive density and discuss what that says about retraining cadence for grid-scale forecasting models in the energy-transition era.
+
+\textbf{Contributions.} (i) A from-scratch multi-modal CNN-Transformer baseline with 5.24\,\% test MAPE on ISO-NE day-ahead forecasting (Part I, \S\S\ref{sec:baseline}--\ref{sec:attn}); (ii) a per-zone weighted late-fusion ensemble with a frozen foundation model that achieves 4.33\,\% test MAPE without retraining either component (\S\ref{sec:ensemble}); (iii) a deployable, public-data-only inference pipeline with a three-repo split architecture (\S\ref{sec:deploy:arch}); (iv) a quantitative case study of 3-year distribution drift in a deployed demand forecaster, with a per-zone diagnostic that localizes the drift to BTM-solar-saturated zones (Part II, \S\S\ref{sec:deploy:results}--\ref{sec:deploy:btm}).
+\end{abstract}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+\paragraph{Problem.} We forecast next-24-hour electricity demand for each of the eight ISO New England load zones: \zone{ME}, \zone{NH}, \zone{VT}, \zone{CT}, \zone{RI}, \zone{SEMA}, \zone{WCMA}, \zone{NEMA\_BOST}. The model receives a 24-hour history window of hourly weather rasters, demand, and calendar features, plus 24 hours of future calendar features. With $S=24$ history steps, $\nz=8$ zones, and 44-dimensional one-hot calendar features $C_t$, it produces
+\begin{equation}
+    \hat Y_{t+1:t+24} \;=\; f_\theta\!\bigl(\, X_{t-S:t+24}\!\in\!\mathbb{R}^{(S+24)\times 7\times 450\times 449},\;\; Y_{t-S:t}\!\in\!\mathbb{R}^{S\times \nz},\;\; C_{t-S:t+24}\!\in\!\mathbb{R}^{(S+24)\times 44}\bigr),
+    \label{eq:task}
+\end{equation}
+where $X$ are 7-channel HRRR weather rasters \citep{benjamin2016hrrr,noaa2024hrrr}. The training-time evaluation metric is mean absolute percentage error (MAPE) on physical MWh values, averaged over the 24-hour horizon and the 8 zones:
+\begin{equation}
+    \mathrm{MAPE}(\hat Y, Y) \;=\; \frac{100}{24\,\nz}\sum_{h=1}^{24}\sum_{z=1}^{\nz}\frac{\bigl|\hat Y_{t+h,z}-Y_{t+h,z}\bigr|}{Y_{t+h,z}}.
+    \label{eq:mape}
+\end{equation}
+All training-time MAPE numbers in this paper come from a self-evaluation harness on the \textbf{last 2 days of 2022} (2022-12-30 and 2022-12-31). Live-deployment MAPE numbers are computed against the public ISO-NE 5-minute zonal load feed at the time of inference.
+
+\paragraph{Why this paper exists --- the scope of the contribution.} Most published demand-forecasting papers report a single accuracy number on a curated test slice. Real grid forecasters care about a different question: how does that number drift after the model is fielded? The energy transition makes this question urgent: rooftop solar in the U.S. Northeast roughly tripled between 2020 and 2025 \citep{eia2025distpv}, behind-the-meter generation is largely invisible to ISO operators, and any forecaster trained on pre-2023 data is effectively learning a pre-transition demand distribution. We use ISO New England as a particularly clean test case because (a) the eight zones span very different rooftop-solar incentive regimes (Massachusetts SMART \citep{ma2024smart} and Rhode Island REG \citep{ri2024reg} are aggressive; Vermont, Maine, and New Hampshire are not), and (b) all the data needed to deploy a forecaster is available from no-auth public endpoints, which lets us reproduce the deployment in a free public web demo.
+
+\paragraph{Contributions.} We make four contributions, organized along a two-part narrative:
+
+\textbf{Part I --- Design and training.}
+\begin{itemize}\setlength\itemsep{1pt}
+  \item A multi-modal CNN-Transformer baseline (\S\ref{sec:baseline}) that fuses 7-channel HRRR weather rasters, recent per-zone demand, and one-hot calendar features at the token level. With 1.75\,M parameters it reaches \textbf{5.24\,\% test MAPE} on the 2022-12-30/31 slice.
+  \item A foundation-model ensemble (\S\ref{sec:ensemble}) that pairs the baseline with a frozen Chronos-Bolt model used \emph{zero-shot} \citep{ansari2024chronos}, blended per-zone with hand-tuned weights $\alpha_z$. The ensemble reaches \textbf{4.33\,\% test MAPE} with Chronos-Bolt-base (205\,M parameters) and \textbf{4.21\,\% test MAPE} with Chronos-Bolt-mini (21\,M parameters; deployed in our live demo). To our knowledge this is the first published per-zone late-fusion result on ISO-NE day-ahead demand.
+\end{itemize}
+
+\textbf{Part II --- Public deployment and findings.}
+\begin{itemize}\setlength\itemsep{1pt}
+  \item A deployment architecture (\S\ref{sec:deploy:arch}) that decouples the serving runtime (HuggingFace Spaces, no GPU) from a daily-refreshed backtest cache (a separate public GitHub repo) and from the training code (a third public repo). The split makes daily-fresh evaluation data freely available to third parties at sub-second latency without forcing any redeploy.
+  \item A pipeline-equivalence experiment and a 3-year distribution-drift case study (\S\S\ref{sec:deploy:validation}--\ref{sec:deploy:btm}). We show that re-running the deployed pipeline on a training-window date (2022-12-30) reproduces the cluster's stored predictions to within 0.13\,pp, certifying the pipeline. We then run the same pipeline on a rolling 7-day window in May 2026 and observe per-zone MAPE that ranges from 7\,\% (Boston metro) to 78\,\% (West-Central Massachusetts), with a clean north-south split that tracks state-level BTM solar incentive density.
+\end{itemize}
+
+\paragraph{Paper organization.} \S\ref{sec:relwork} reviews related work. \S\ref{sec:data} describes the data and the four-step normalization chain that all downstream models share. Part I (\S\S\ref{sec:baseline}--\ref{sec:attn}) covers the baseline, the encoder-decoder architecture exploration, the foundation-model ensemble, and an attention-map analysis of what the baseline has learned. Part II (\S\S\ref{sec:deploy:arch}--\ref{sec:deploy:btm}) covers the deployment architecture, the pipeline validation experiment, and the deployment-period results. \S\ref{sec:discussion} discusses implications and limitations.

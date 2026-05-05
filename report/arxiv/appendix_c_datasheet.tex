@@ -1,0 +1,24 @@
+% =====================================================================
+% Appendix C — Datasheet for the Public Dataset (Gebru et al. 2018 style)
+% =====================================================================
+
+\section{Datasheet for the public dataset}
+\label{app:datasheet}
+
+Following \citet{gebru2018datasheets}.
+
+\paragraph{Motivation.} The dataset supports day-ahead 24-hour electricity demand forecasting for the eight ISO New England load zones. It pairs hourly per-zone demand (from ISO-NE) with hourly weather rasters (from NOAA HRRR) over a common UTC time index, plus deterministic 44-d calendar one-hots. The dataset is intended for ML/forecasting research; it is not certified for production grid operations.
+
+\paragraph{Composition.} Each sample is a 48-hour window with $S=24$ history hours and $H=24$ future hours. Per timestep: a $(450, 449, 7)$ HRRR weather raster, an 8-d per-zone demand vector, and a 44-d calendar one-hot. Per sample: history+future weather (48 timesteps), history demand (24 timesteps), future demand target (24 timesteps), history+future calendar (48 timesteps). Calendar years 2019--2023 yield $\sim$26\,K samples after dropping any timesteps with missing weather or demand.
+
+\paragraph{Collection process.} ISO-NE per-zone demand is published through the public Energy/Load/Demand reports portal \citep{isone2024data} as monthly CSVs by zone, plus a 5-minute live feed (Appendix~\ref{app:isone}). HRRR weather is available from NOAA's S3 mirror \texttt{s3://noaa-hrrr-bdp-pds/} \citep{noaa2024hrrr,benjamin2016hrrr}; we use the f00 analysis product. Calendar features are computed deterministically from UTC timestamps. No PII; no human subjects; no sensitive demographic data.
+
+\paragraph{Preprocessing.} (a) Demand: monthly per-zone CSVs are joined into a 2019--2023 hourly long table; UTC alignment uses pandas with US/Eastern timezone localization. (b) Weather: HRRR f00 analyses are fetched via Herbie at hourly cadence, restricted to the New England bbox, and bilinearly regridded to a regular 450$\times$449 lat/lon grid. (c) Calendar: 44-d one-hot via custom encoder. (d) Splits: train (2019--2020 baseline / 2019--2021 encoder-decoder) / val (2021 baseline / 2022 encoder-decoder) / test (last 2 days of 2022). All MAPE numbers in this paper are computed on the test slice or on the live deployment-period rolling window.
+
+\paragraph{Uses.} Day-ahead 24-hour per-zone demand forecasting; comparison of multimodal vs foundation-model time-series forecasters; distribution-shift case studies for deployed forecasting systems. \emph{Not} certified for grid operations or market dispatch.
+
+\paragraph{Distribution.} The full pre-processed dataset is reproducible from public sources via \texttt{scripts/data\_preparation/}: \texttt{fetch\_iso\_ne\_demand.py} (per-zone monthly CSVs; downloads from ISO-NE) + \texttt{fetch\_hrrr\_weather.py} (per-hour HRRR analyses; downloads from NOAA AWS S3 via Herbie). The deployed live demo additionally consumes the 5-minute zonal live feed (Appendix~\ref{app:isone}).
+
+\paragraph{Maintenance.} The auxiliary data repository (\href{https://github.com/jeffliulab/new-england-real-time-power-predict-data}{\texttt{new-england-real-time-power-predict-data}}) refreshes the rolling 7-day backtest daily at 04:00\,UTC via GitHub Actions. The training-time CSVs and HRRR cache are pinned to the snapshot used for this paper. Source code is at \href{https://github.com/jeffliulab/real-time-power-predict}{\texttt{real-time-power-predict}}.
+
+\paragraph{PII.} None. The data is aggregate per-zone load and gridded weather analyses; no individual customer data is exposed.

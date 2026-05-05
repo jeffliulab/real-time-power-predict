@@ -1,0 +1,24 @@
+% =====================================================================
+% Appendix A — HRRR fetcher implementation
+% =====================================================================
+
+\section{HRRR fetcher implementation}
+\label{app:hrrr}
+
+The deployed HRRR fetcher (\texttt{space/hrrr\_fetch.py}) is a re-implementation of the offline training-time fetcher (\texttt{scripts/data\_preparation/fetch\_hrrr\_weather.py}) with three production additions: (a) a precomputed Delaunay-triangulation regrid that runs in $\sim$10\,ms per channel after a $\sim$0.3\,s one-time setup; (b) an in-process LRU cache keyed by (cycle\_dt, fxx) that survives within an HF Space uptime session; (c) a long-cycle selector that automatically picks the most recent HRRR cycle that goes out to f24+ (00, 06, 12, 18\,UTC).
+
+\paragraph{Channel selection.} Seven channels are extracted in fixed order via Herbie's \texttt{searchString} pattern:
+\texttt{TMP:2 m above ground} (2-m air temperature),
+\texttt{RH:2 m above ground} (2-m relative humidity),
+\texttt{UGRD:10 m above ground} and \texttt{VGRD:10 m above ground} (10-m wind components),
+\texttt{GUST:surface} (surface wind gust),
+\texttt{DSWRF:surface} (downward shortwave radiation flux),
+and \texttt{APCP:surface:0-1 hour acc} (1-hour accumulated precipitation). For HRRR forecast hours \texttt{fxx > 0} the APCP search returns a different accumulation window than the training-time \texttt{0-1 hour acc} pattern; we zero-fill APCP for those forecast hours (justified in \S\ref{sec:deploy:arch}; the training-time mean is close to zero in z-score space).
+
+\paragraph{Bounding box and regrid.} The New England bounding box is $[40.5,47.5]^{\circ}\!$N $\times [-74.0, -66.0]^{\circ}\!$E. HRRR's native grid is Lambert-Conformal at 1059$\times$1799 cells; we crop with a 1.5$^{\circ}$ margin to the NE bbox, build a Delaunay triangulation on the cropped source points, and compute barycentric weights for our $450\times 449$ regular lat/lon target grid. The weights are computed once and cached in process memory; per-channel regrid is a single sparse matvec.
+
+\paragraph{Long-cycle selector.} HRRR cycles at 00, 06, 12, 18\,UTC produce forecasts out to f48; cycles at other hours only reach f18. To cover a 24-hour future window, the deployment finds the most recent long cycle issued at least 2\,h before the forecast time (the 2\,h margin is the typical HRRR processing delay) and uses an offset $\mathrm{fxx}\in\{6, 12, 18, 24\}$ to align valid hours to the forecast window.
+
+\paragraph{Cache.} \texttt{/tmp/hrrr\_cache/{cycle\_YYYYMMDDHH}\_f{NN}.npz} stores extracted $(450, 449, 7)$ float16 arrays ($\sim$2.9\,MB each). On HF Spaces the cache is wiped on every cold start; within an uptime session the cache makes repeated requests for the same hour effectively free.
+
+\paragraph{Soft-fail behaviour.} The fetcher reports per-channel soft failures (e.g.\ a missing GRIB message) by zero-filling that channel and logging the event, rather than aborting. This keeps the demo usable when one of the seven channels is temporarily unavailable in the AWS bucket; the impact on downstream MAPE is bounded by the channel's variance contribution to the model.

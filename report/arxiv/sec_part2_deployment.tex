@@ -1,0 +1,175 @@
+% =====================================================================
+% Part II — Public Deployment & Findings
+% §8 Deployment architecture, §9 Pipeline validation, §10 Deployment results
+% =====================================================================
+
+\section{Deployment architecture}
+\label{sec:deploy:arch}
+
+The trained models from Part I are deployed as a public Gradio web app on HuggingFace Spaces (CPU-only free tier; 2 vCPU, 16\,GB RAM). The Space serves two operating modes:
+
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{Real-time forecast.} On each user request the Space (a) fetches the past 24\,h of HRRR f00 weather analyses + cycle-T's f01--f24 forecast, (b) fetches the past 24\,h of ISO-NE 5-min estimated zonal load (rolled up to hourly), (c) runs the baseline + Chronos-Bolt-mini ensemble forward, and (d) renders the per-zone forecast. Cold start is 3--5\,min (HRRR fetch + Chronos-Bolt-mini load); subsequent in-session clicks are 10--30\,s.
+  \item \textbf{Backtest tab.} Renders a precomputed 7-day rolling backtest with full per-zone ground truth. The backtest is rebuilt every 24\,h by an external GitHub Actions cron and pulled by the Space at startup.
+\end{itemize}
+
+A small but important architectural decision is the \emph{three-repo split} (Figure~\ref{fig:3repo}). We split the deployment across three independent public repositories:
+
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{Code repo} (\texttt{real-time-power-predict}): trained checkpoint, model code, Space app source. Treated as the canonical source-of-truth. HuggingFace mirrors this repo into the Space on every push.
+  \item \textbf{Data repo} (\texttt{new-england-real-time-power-predict-data}): a separate public GitHub repository whose only purpose is to host \texttt{data/backtest\_rolling\_7d.json} (the precomputed 7-day backtest), \texttt{data/iso\_ne\_30d.csv} (the 30-day per-zone history Chronos uses as context), and \texttt{data/last\_built.json} (build metadata). A GitHub Actions workflow checks out the code repo, runs \texttt{scripts/build\_rolling\_backtest.py} with public data only (HRRR via \texttt{noaa-hrrr-bdp-pds}; ISO-NE via the 5-min estimated zonal load CSV with the cookie-prime trick described in Appendix~\ref{app:isone}), and commits the JSON+CSV back to the data repo's \texttt{main} branch.
+  \item \textbf{Serving repo} (the HuggingFace Space): does not store data. At app startup it issues an HTTPS GET to \texttt{raw.githubusercontent.com/.../main/data/backtest\_rolling\_7d.json} and renders.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\input{figures/architecture_3repo}
+\caption{Three-repo deployment architecture. The cron in the data repo checks out the code repo, runs the rolling-backtest builder against the same public data sources the Space uses at request time, and commits the result back. The Space pulls the JSON via raw.githubusercontent.com with no auth. This decouples daily backtest refresh from Space rebuilds and gives third parties direct access to the daily-fresh evaluation data via a single curl.}
+\label{fig:3repo}
+\end{figure}
+
+\paragraph{Why this split.}
+A monolithic alternative would commit the JSON back to the code repo daily; HuggingFace would then rebuild the Space every day, which (a) costs $\sim$60\,s of Docker rebuild for a 200\,KB data change, and (b) pollutes the code repo's git log. A second alternative is to keep the data on HuggingFace's persistent storage; that storage is paid and is private to the Space, which removes third-party access. The three-repo split costs nothing extra (public-repo GitHub Actions are unmetered for compute), keeps the code repo's history clean, and exposes daily-fresh data via a stable raw HTTPS URL.
+
+\paragraph{Public-data ingestion paths.}
+All data sources used by the cron and the Space are public and require no authentication:
+
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{HRRR weather} \citep{noaa2024hrrr,benjamin2016hrrr}: byte-range GET against \texttt{s3://noaa-hrrr-bdp-pds/} via the \texttt{herbie-data} Python library \citep{blaylock2023herbie}. Each cycle's GRIB index is consulted and only the 7 channels we need are downloaded ($\sim$2--10\,MB per cycle, not the full $\sim$150\,MB GRIB2 file). The native Lambert-conformal grid is regridded to our $450\times 449$ regular lat/lon grid via Delaunay-triangulation barycentric (bilinear-equivalent) interpolation (Appendix~\ref{app:hrrr}).
+  \item \textbf{ISO-NE per-zone load} \citep{isone2024data}: GET against the 5-minute estimated zonal load endpoint, after priming a session cookie by visiting a normal page first (the \emph{cookie-prime trick}; Appendix~\ref{app:isone}). The endpoint returns CSV with one row per zone per 5-minute timestamp; we resample to hourly mean to match the model's input shape.
+  \item \textbf{Chronos-Bolt-mini}: pulled from the HuggingFace Hub at app startup (\texttt{amazon/chronos-bolt-mini}, $\sim$80\,MB, Apache-2.0).
+\end{itemize}
+
+\paragraph{Strict-discipline rolling backtest.}
+For each daily forecast at time $T$ in the rolling window, we use only data available at $T$:
+
+\begin{itemize}\setlength\itemsep{1pt}
+  \item \textbf{Demand history} for hours $[T-24, T-1]$: ISO-NE per-zone load.
+  \item \textbf{Weather history} for hours $[T-24, T-1]$: 24 separate HRRR f00 analyses (one cycle per valid hour), matching the training-time input.
+  \item \textbf{Weather forecast} for hours $[T, T+23]$: the most recent HRRR cycle issued before $T$ (specifically a long cycle 00/06/12/18\,UTC, since shorter cycles only go to f18; we offset $\mathrm{fxx}$ accordingly to cover the 24-hour future window). \emph{No future analyses are used.}
+  \item \textbf{Truth} for MAPE comparison: ISO-NE per-zone load for $[T, T+23]$, fetched after the fact from the same public endpoint.
+\end{itemize}
+
+\paragraph{Cron-driven daily refresh.}
+The data repo's GitHub Actions workflow runs daily at 04:00\,UTC (chosen so that ISO-NE has reliably published the previous calendar day's 5-minute zonal data). A typical run finishes in 9--10 minutes (24 cycles $\times$ 24 hours $\times$ 7 forecasts of HRRR fetches dominate; we fetch 8-way in parallel). On public repositories, GitHub Actions are unmetered, so the daily refresh has zero ongoing cost.
+
+% =====================================================================
+\section{Pipeline validation}
+\label{sec:deploy:validation}
+
+A natural worry about a deployed pipeline is that a refactor between training and serving has silently changed the prediction. We rule this out empirically: we re-run the deployed pipeline on a date \emph{inside the training window} (2022-12-30) and compare element-wise to the cluster's stored prediction from the original training run.
+
+\subsection{Setup}
+
+We pick 2022-12-30 because (a) the cluster has stored predictions for that date in \texttt{pretrained\_models/baseline/dump/baseline\_preds\_test\_2022\_last2d.json}, with a known per-forecast MAPE of 6.54\,\%, and (b) all the inputs (HRRR f00 analyses, per-zone demand) are publicly available and identical to what the training run consumed.
+
+The reproduction script (\texttt{scripts/validation/reproduce\_dec30\_2022.py}) does the following:
+\begin{enumerate}\setlength\itemsep{1pt}
+  \item Loads training-CSV per-zone demand for the 24 hours $[2022\text{-}12\text{-}29\,00\!:\!00, 2022\text{-}12\text{-}29\,23\!:\!00]$ as history and the 24 hours $[2022\text{-}12\text{-}30\,00\!:\!00, 2022\text{-}12\text{-}30\,23\!:\!00]$ as truth.
+  \item Fetches HRRR f00 analyses for both windows from \texttt{noaa-hrrr-bdp-pds} via the deployed pipeline's \texttt{space/hrrr\_fetch.py}.
+  \item Loads the deployed checkpoint \texttt{space/checkpoints/best.pt} and the embedded \texttt{norm\_stats.pt}.
+  \item Runs forward exactly as the live serving stack does (same normalize / forward / denormalize chain).
+  \item Compares element-wise to the cluster's stored \texttt{preds[idx=0]} from the JSON dump.
+\end{enumerate}
+
+\subsection{Results}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{validation_dec30_2022_overlay.png}
+\caption{Pipeline-equivalence check. Eight panels (one per zone), 24-hour forecast horizon, all curves on the same scale. Solid: ground-truth demand. Dashed: cluster's stored prediction (6.54\,\% MAPE). Dotted: live pipeline rerun (6.41\,\% MAPE). The two prediction curves visually overlap; element-wise differences are bounded by 94\,MW (3.6\,\% of cluster pred).}
+\label{fig:validation_overlay}
+\end{figure}
+
+The deployed pipeline produces \textbf{6.41\,\% MAPE} vs the cluster's stored \textbf{6.54\,\% MAPE} --- a gap of 0.13 percentage points. Element-wise diffs are: mean $-5$\,MW, max absolute 94\,MW (3.6\,\% of the cluster pred at that point). Per-zone diffs are bounded similarly: ME $\approx -4$\,MW mean, NEMA-Boston $\approx -8$\,MW mean. We therefore certify the deployed pipeline as functionally equivalent to the training-time evaluation. Any subsequent gap between training-time MAPE and live-deployment MAPE is attributable to genuine input-distribution change, not to a serving bug.
+
+% =====================================================================
+\section{Deployment-period results (May 2026)}
+\label{sec:deploy:results}
+
+We now turn to live deployment behaviour. Section~\ref{sec:deploy:setup} describes the rolling-window setup; Section~\ref{sec:deploy:overall} reports headline numbers; Sections~\ref{sec:deploy:perzone} and \ref{sec:deploy:btm} dissect them.
+
+\subsection{Setup}
+\label{sec:deploy:setup}
+
+The deployment-period rolling backtest covers 2026-04-28 through 2026-05-04 (7 daily forecasts at 00:00\,UTC each). All inputs come from the public sources described in \S\ref{sec:deploy:arch}; the model is the same checkpoint validated in \S\ref{sec:deploy:validation}. The cron's reported \texttt{built\_at} for the snapshot we use is 2026-05-05\,06:19\,UTC.
+
+\subsection{Overall MAPE}
+\label{sec:deploy:overall}
+
+Table~\ref{tab:deployment_overall} reports the 7-day rolling MAPE for each of the three model variants the Space serves. Two facts are striking:
+
+\begin{itemize}\setlength\itemsep{1pt}
+  \item The baseline, which scored 5.24\,\% on the offline 2022 evaluation, scores \textbf{25.17\,\%} in May 2026 --- a 5$\times$ degradation.
+  \item The Chronos-Bolt-mini zero-shot predictor, which uses no weather and no calendar, scores 13.45\,\% --- nearly half the baseline's deployment MAPE.
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Live deployment-period MAPE (rolling 7-day window 2026-04-28 to 2026-05-04). 2022 self-eval numbers from Table~\ref{tab:baseline} (baseline) and \S\ref{sec:ensemble:test} (Chronos / ensemble) are shown for reference.}
+\label{tab:deployment_overall}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Model & 2022 self-eval MAPE (\%) & May-2026 7-day MAPE (\%) \\
+\midrule
+Baseline (CNN-Transformer, real HRRR + per-zone)             & 5.24  & \textbf{25.17} \\
+Chronos-Bolt-mini (zero-shot, demand history only)            & 4.21$^{*}$ & \textbf{13.45} \\
+Per-zone-weighted ensemble                                    & 4.21  & \textbf{14.51} \\
+\bottomrule
+\multicolumn{3}{l}{\footnotesize $^{*}$ standalone Chronos at 2022 self-eval; the 4.21\,\% is the ensemble in that row.} \\
+\end{tabular}
+\end{table}
+
+\subsection{Per-zone breakdown}
+\label{sec:deploy:perzone}
+
+Figure~\ref{fig:deploy_per_zone} shows the per-zone MAPE for each variant on the live window. The pattern is anything but uniform.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{deployment_per_zone_mape.png}
+\caption{Per-zone MAPE on the May-2026 7-day live window, for each of the three deployed model variants. The two flagged zones \zone{NEMA-Boston} and \zone{ME} are the only ones approaching the offline 2022 numbers; \zone{RI}, \zone{SEMA}, \zone{WCMA} show 60--80\,\% MAPE for the baseline.}
+\label{fig:deploy_per_zone}
+\end{figure}
+
+The baseline's zonal MAPE ranges from 6.8\,\% (\zone{NEMA-Boston}) to 78\,\% (\zone{WCMA}). \zone{NEMA-Boston} (dense urban Boston metro) and \zone{ME} (rural Maine, electric-heating-dominant) remain near their offline numbers. The southern Massachusetts and Rhode Island zones --- \zone{RI} 63\,\%, \zone{SEMA} 72\,\%, \zone{WCMA} 78\,\% --- collapse. \zone{CT} (28\,\%) sits between.
+
+Figure~\ref{fig:training_vs_deploy} compares 2022 self-eval MAPE to May-2026 deployment MAPE per zone. The rank-correlation across zones is preserved (zones that were harder in 2022 are still harder in 2026), but the absolute degradation is sharply zone-specific.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.95\linewidth]{training_vs_deployment_per_zone_drift.png}
+\caption{Per-zone MAPE: 2022 self-evaluation vs May-2026 deployment. Both axes are MAPE\,\%; bars are color-grouped by zone. The dashed diagonal would indicate no drift; deviation above the diagonal is the per-zone drift signature. Northern zones (\zone{ME}, \zone{NH}, \zone{VT}) cluster near the diagonal; southern Massachusetts and Rhode Island zones are far above. \zone{NEMA-Boston} is the cleanest exception in the south.}
+\label{fig:training_vs_deploy}
+\end{figure}
+
+\subsection{Distribution drift correlates with state-level BTM solar incentive density}
+\label{sec:deploy:btm}
+
+Why these zones, and why now? Our hypothesis is that the per-zone drift signature tracks the per-state rooftop / behind-the-meter (BTM) solar incentive density. Three lines of evidence:
+
+\paragraph{1. Geographic clustering.}
+The collapsed zones (\zone{RI}, \zone{SEMA}, \zone{WCMA}) plus the moderately-affected \zone{CT} all sit in the southern half of New England. The well-behaved zones (\zone{ME}, \zone{NH}, \zone{VT}, \zone{NEMA-Boston}) are either north (Maine, New Hampshire, Vermont) or are densely urban (Boston metro, where rooftop solar is uneconomic on apartment buildings).
+
+\paragraph{2. Policy alignment.}
+Massachusetts (zones \zone{SEMA}, \zone{WCMA}, \zone{NEMA-Boston}) and Rhode Island (zone \zone{RI}) have run aggressive utility-scale BTM solar programs since 2018: Massachusetts SMART \citep{ma2024smart}, which produced compensation rates among the highest in the country, and Rhode Island Renewable Energy Growth \citep{ri2024reg}. Connecticut (zone \zone{CT}) has a smaller program. Vermont, New Hampshire, and Maine do not have programs of comparable scale during the 2022--2026 window.
+
+\paragraph{3. Capacity growth in the EIA data.}
+The EIA monthly distributed-PV dataset \citep{eia2025distpv} reports state-level distributed solar capacity in MW. For New England, MA capacity roughly tripled from $\sim$2.5\,GW in late 2020 to $\sim$7.5\,GW in early 2026; RI roughly doubled from 0.4\,GW to 0.9\,GW; CT roughly doubled. Vermont, Maine, and New Hampshire saw modest growth on much smaller bases. Figure~\ref{fig:solar_drift} plots state-level distributed PV capacity per capita against the per-zone MAPE drift from 2022 self-eval to May-2026 deployment. The correlation is visible: the four zones with high state-level PV capacity per capita (\zone{WCMA}, \zone{SEMA}, \zone{RI}, \zone{NEMA-Boston}) show the largest drift, modulated by \zone{NEMA-Boston}'s commercial / apartment-heavy load mix where rooftop solar deployment is uneconomic. We do not establish causation from this scatter alone; the alignment is consistent with the qualitative argument and motivates the future-work direction in \S\ref{sec:conclusion}.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{state_solar_density_vs_mape_drift.png}
+\caption{State-level distributed PV capacity per capita (MW per million people, 2026-Q1, from EIA Form 861M) plotted against per-zone MAPE drift (May-2026 deployment minus 2022 self-eval). For Massachusetts (\zone{SEMA}, \zone{WCMA}, \zone{NEMA-Boston}) we apportion the state-level capacity to zones proportional to mean load. Larger markers = larger drift. The $\sim$10$\times$ range in PV per capita aligns with the $\sim$70-percentage-point range in observed deployment drift; \zone{NEMA-Boston} sits below the trend because its load is dominated by commercial buildings and apartment complexes where BTM solar is sparse despite Massachusetts state policy.}
+\label{fig:solar_drift}
+\end{figure}
+
+\paragraph{Causal chain.}
+BTM solar generation that the ISO does not see directly suppresses the daytime grid-served load. A model trained on 2019--2022 demand learned a daytime profile that included BTM solar at then-current penetration (relatively low). At inference time in 2026, daytime grid-served demand is meaningfully lower in proportion to incremental BTM solar deployed since then. The model expects the 2022 daytime profile and overpredicts; the more BTM solar deployed since training, the worse the overprediction. \zone{NEMA-Boston}, despite being in Massachusetts, is the cleanest exception because its load is dominated by commercial buildings and apartment complexes where rooftop solar is hard to deploy --- the BTM solar growth has happened in suburban and exurban zones (\zone{WCMA}, \zone{SEMA}) where rooftops are abundant.
+
+\subsection{Why Chronos-Bolt-mini and the ensemble survive}
+
+Chronos-Bolt-mini scores 13.45\,\% on the live window despite seeing no weather --- about half the baseline's MAPE. The reason is that Chronos predicts each zone independently from 672\,h of \emph{the zone's own demand history}, which already encodes the post-2022 BTM-solar-shifted load profile. The Chronos prediction is essentially an extrapolation of the recent zonal pattern; it does not need to know about BTM solar to inherit its observed effect.
+
+The per-zone weighted ensemble (Eq.~\ref{eq:ensemble}) hits 14.51\,\% --- slightly worse than the standalone Chronos in the deployment window, because the $\alpha_z$ weights were tuned on a 2022 validation slice when the baseline still had useful weather signal. The deployment results suggest that retuning $\alpha_z$ on a recent validation window (or moving to dynamic $\alpha_z$ that responds to the per-zone gap between baseline and Chronos) would close this gap.

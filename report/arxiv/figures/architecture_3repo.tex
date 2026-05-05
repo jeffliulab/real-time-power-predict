@@ -1,0 +1,75 @@
+% TikZ — three-repo deployment architecture (used in §8.1).
+\begin{tikzpicture}[
+  font=\small,
+  every node/.style={align=center},
+  repo/.style={
+    rectangle, rounded corners=3pt,
+    draw=NavyAccent, thick,
+    fill=CardBG,
+    text=InkColor,
+    minimum width=4.4cm, minimum height=1.4cm,
+    inner sep=4pt,
+  },
+  source/.style={
+    rectangle, rounded corners=2pt,
+    draw=SubInk, dashed,
+    fill=white,
+    text=SubInk,
+    minimum width=4.0cm, minimum height=0.8cm,
+    inner sep=3pt,
+    font=\footnotesize,
+  },
+  arrow/.style={-Stealth, thick, draw=AccentBlue},
+  thinarrow/.style={-Stealth, semithick, draw=SubInk},
+  edgelabel/.style={
+    font=\scriptsize\itshape, text=AccentBlue,
+    inner sep=1pt,
+    fill=white,
+  },
+]
+
+% --- Public data sources (top row) ---
+\node[source] (hrrr)    at (-4.6, 5.2)  {\textbf{NOAA HRRR}\\\texttt{s3://noaa-hrrr-bdp-pds/}};
+\node[source] (isone)   at ( 0,    5.2) {\textbf{ISO-NE}\\\texttt{transform/csv/...}};
+\node[source] (chronos) at ( 4.6,  5.2) {\textbf{HuggingFace Hub}\\\texttt{amazon/chronos-bolt-mini}};
+
+% --- Three repos (middle row) ---
+\node[repo] (code)  at (-4.8, 2.4) {\textbf{Code repo}\\\texttt{real-time-power-predict}\\\footnotesize source-of-truth};
+\node[repo] (data)  at ( 0,    2.4) {\textbf{Data repo}\\\texttt{...-data}\\\footnotesize cron output, JSON/CSV};
+\node[repo] (space) at ( 4.8,  2.4) {\textbf{HF Space}\\\texttt{predict-power}\\\footnotesize Gradio serving};
+
+% --- User (bottom) ---
+\node[draw=SubInk, thick, fill=white, rounded corners=2pt,
+      minimum width=4.0cm, minimum height=0.8cm,
+      font=\footnotesize] (user) at (4.8, -0.2)
+      {\textbf{User browser}\\real-time forecast + 7-day backtest};
+
+% --- Source -> data-repo arrows (top) ---
+\draw[thinarrow] (hrrr.south)    -- node[edgelabel, sloped, pos=0.55] {Herbie} ($(data.north) + (-0.6, 0)$);
+\draw[thinarrow] (isone.south)   -- node[edgelabel, pos=0.50]         {cookie-prime CSV} (data.north);
+\draw[thinarrow] (chronos.south) -- node[edgelabel, sloped, pos=0.55] {from\_pretrained} ($(data.north) + (0.6, 0)$);
+
+% --- Source -> Space arrows (used at request time) ---
+\draw[thinarrow] (hrrr.south)    .. controls +(-1.0, -1.5) and +(0, 2.0) .. ($(space.north) + (-0.6, 0)$);
+\draw[thinarrow] (isone.south)   .. controls +(0, -1.5)    and +(0, 2.0) .. (space.north);
+\draw[thinarrow] (chronos.south) .. controls +(0.6, -1.5)  and +(0.6, 2.0) .. ($(space.north) + (0.6, 0)$);
+
+% --- Code -> Data (cron checkout) ---
+\draw[arrow] (code.east) -- node[edgelabel, pos=0.5] {GitHub Actions\\checkout main} (data.west);
+
+% --- Code -> Space (HF -> Space sync) ---
+\draw[arrow, dashed] (code.south) .. controls +(0, -1.6) and +(-1.0, -1.6) ..
+   node[edgelabel, sloped, pos=0.45] {HF auto-sync on push} (space.south);
+
+% --- Data -> Space (raw URL fetch on startup) ---
+\draw[arrow] (data.east) -- node[edgelabel, pos=0.5] {raw HTTPS GET\\$\sim$250 KB at startup} (space.west);
+
+% --- Space -> User ---
+\draw[arrow] (space.south) -- node[edgelabel, pos=0.5] {Gradio HTTPS} (user.north);
+
+% --- Section labels (left margin) ---
+\node[font=\small\itshape, text=SubInk, anchor=east] at (-7.2, 5.2) {Public sources};
+\node[font=\small\itshape, text=SubInk, anchor=east] at (-7.2, 2.4) {Three repos};
+\node[font=\small\itshape, text=SubInk, anchor=east] at (-7.2, -0.2) {Consumer};
+
+\end{tikzpicture}

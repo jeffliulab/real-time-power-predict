@@ -1,0 +1,10 @@
+% =====================================================================
+% Appendix F — AI-tool disclosure
+% =====================================================================
+
+\section{AI-tool disclosure}
+\label{app:ai}
+
+The author used \emph{Claude Code} (Anthropic; models: Opus 4.7 and Sonnet 4.6) as a coding and writing assistant throughout this project. AI was used for: (i) code scaffolding (training-loop boilerplate, SLURM scripts, Gradio app stub, the rolling-backtest cron, the reproducibility validation script); (ii) figure-rendering code (\texttt{matplotlib} generators in \texttt{scripts/figures/} and the TikZ source for the architecture diagrams); (iii) \LaTeX{} boilerplate (\texttt{preamble.tex}, citation expansion in \texttt{refs.bib}); (iv) prose copy-editing on this paper.
+
+AI was \emph{not} used for: research design, model architecture choices, training-result interpretation, the LR-scheduler-reset-bug diagnosis, the four geographic-orientation correctness checks in \S\ref{sec:attn}, or any final scientific claim. All design decisions, all numerical results, and all interpretation in this paper reflect the author's own judgment and responsibility.
