@@ -14,7 +14,7 @@ short_description: Real-time day-ahead demand forecasting for ISO New England
 
 # ⚡ Multi-Modal Deep Learning for Energy Demand Forecasting
 
-Live demo of the trained CNN-Transformer baseline (1.75 M params) from our CS-137 final project (Tufts, Spring 2026), blended in a per-zone weighted ensemble with **Chronos-Bolt-mini** (Amazon, 21 M params, zero-shot on demand history).
+Live demo of a trained CNN-Transformer baseline (1.75 M params), blended in a per-zone weighted ensemble with **Chronos-Bolt-mini** (Amazon, 21 M params, zero-shot on demand history).
 
 **All inputs are now fully real** — no synthetic weather, no proportionally-split system demand:
 
@@ -43,7 +43,7 @@ curl -s https://raw.githubusercontent.com/jeffliulab/new-england-real-time-power
 
 - 📄 [Final report (PDF)](https://github.com/jeffliulab/real-time-power-predict/blob/main/report/final_report.pdf)
 - 💻 [GitHub repository](https://github.com/jeffliulab/real-time-power-predict)
-- 👤 Author: **Pang Liu** · `pliu07` · Tufts CS-137
+- 👤 Author: **Pang Liu** · Independent Researcher · [`jeff.pang.liu@gmail.com`](mailto:jeff.pang.liu@gmail.com)
 
 ## Local development
 

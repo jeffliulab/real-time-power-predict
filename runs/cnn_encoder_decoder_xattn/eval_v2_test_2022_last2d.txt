@@ -5,9 +5,9 @@
 [self_eval] dataset module ok
 [self_eval] models module ok
 Device    : cpu
-Checkpoint: /cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/cnn_encoder_decoder_xattn/checkpoints/best.pt
-Norm stats: /cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/cnn_encoder_decoder_xattn/norm_stats.pt
-Data root : /cluster/tufts/c26sp1cs0137/data/assignment3_data
+Checkpoint: runs/cnn_encoder_decoder_xattn/checkpoints/best.pt
+Norm stats: runs/cnn_encoder_decoder_xattn/norm_stats.pt
+Data root : data
 Test slice: last 2 day(s) of 2022
 ======================================================================
 Model     : cnn_encoder_decoder (2,419,312 params)
@@ -43,6 +43,6 @@ Overall MAPE : 9.27%
     "2022-12-30",
     "2022-12-31"
   ],
-  "ckpt": "/cluster/tufts/c26sp1cs0137/pliu07/assignment3/runs/cnn_encoder_decoder_xattn/checkpoints/best.pt",
+  "ckpt": "runs/cnn_encoder_decoder_xattn/checkpoints/best.pt",
   "n_samples": 2
 }

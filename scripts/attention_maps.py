@@ -152,7 +152,7 @@ def parse_args():
     p.add_argument("--norm_stats", type=str,
                    default="runs/cnn_transformer_baseline/norm_stats.pt")
     p.add_argument("--data_root", type=str,
-                   default="/cluster/tufts/c26sp1cs0137/data/assignment3_data")
+                   default="data")
     p.add_argument("--year", type=int, default=2022)
     p.add_argument("--n_samples", type=int, default=5,
                    help="Number of validation samples to extract attention from")

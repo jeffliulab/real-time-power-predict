@@ -1,6 +1,6 @@
 {
   "model": "cnn_transformer",
-  "data_root": "/cluster/tufts/c26sp1cs0137/data/assignment3_data",
+  "data_root": "data",
   "epochs": 15,
   "batch_size": 4,
   "lr": 0.001,

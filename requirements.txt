@@ -3,8 +3,8 @@
 # For the live demo (HF Space) see space/requirements.txt instead — it pins
 # slightly different versions for the gradio runtime.
 #
-# HPC training was performed under torch 2.3.1 + CUDA 11.8 + cuDNN 8.9
-# inside the conda env at /cluster/tufts/c26sp1cs0137/pliu07/conda_envs/cs137.
+# Training was performed under torch 2.3.1 + CUDA 11.8 + cuDNN 8.9 on
+# NVIDIA A100 GPUs (see environment.yml for the matched conda spec).
 
 torch==2.3.1
 numpy>=1.26,<3

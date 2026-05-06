@@ -40,7 +40,7 @@ def parse_args():
     parser.add_argument("--model", type=str, default="cnn_transformer_baseline",
                         choices=list(MODEL_REGISTRY.keys()))
     parser.add_argument("--data_root", type=str,
-                        default="/cluster/tufts/c26sp1cs0137/data/assignment3_data")
+                        default="data")
 
     # Training
     parser.add_argument("--epochs", type=int, default=30)

@@ -103,7 +103,7 @@ norm_stats = ckpt["norm_stats"]   # {weather_mean, weather_std, energy_mean, ene
 
 ```
 Liu, Pang. "Multi-Modal Deep Learning for Energy Demand Forecasting"
-(CS-137 Assignment 3, Tufts University, Spring 2026).
+(real-time-power-predict v1.5, 2026).
 GitHub: https://github.com/jeffliulab/real-time-power-predict
 ```
 

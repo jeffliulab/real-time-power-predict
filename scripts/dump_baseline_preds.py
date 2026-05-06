@@ -25,14 +25,10 @@ Artifacts produced
        zero-shot context) and c2 (Chronos fine-tune training set).
        Columns: timestamp_utc, ME, NH, VT, CT, RI, SEMA, WCMA, NEMA_BOST.
 
-Usage (on HPC compute node, inside cs137 conda env)
----------------------------------------------------
-    cd /cluster/tufts/c26sp1cs0137/pliu07/predict-power
+Usage
+-----
     python scripts/dump_baseline_preds.py
         # writes to runs/cnn_transformer_baseline/dump/
-
-The local rsync command to pull the artifacts back is in the docstring of
-inference/test_run_supplementary.sh (single bundled rsync, one DUO push).
 """
 
 from __future__ import annotations
@@ -62,7 +58,7 @@ def parse_args():
     p.add_argument("--norm_stats", type=str,
                    default="runs/cnn_transformer_baseline/norm_stats.pt")
     p.add_argument("--data_root", type=str,
-                   default="/cluster/tufts/c26sp1cs0137/data/assignment3_data")
+                   default="data")
     p.add_argument("--year", type=int, default=2022)
     p.add_argument("--n_test_days", type=int, default=2)
     p.add_argument("--val_days", type=int, default=14,

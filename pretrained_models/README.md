@@ -1,17 +1,15 @@
 # Pretrained models
 
-Three trained checkpoints for ISO-NE day-ahead demand forecasting.
-All trained on Tufts HPC `c26sp1cs0137` cluster against the
-2019-2023 weather + demand slice at
-`/cluster/tufts/c26sp1cs0137/data/assignment3_data/`.
+Trained checkpoints for ISO-NE day-ahead demand forecasting. The shipped
+checkpoint is the 1.75 M-parameter CNN-Transformer baseline. Trained
+against the 2019–2023 NOAA HRRR weather + ISO-NE per-zone demand archive
+on NVIDIA A100-80 GB / 40 GB GPUs.
 
 ## Also published on Hugging Face Hub
 
-| Local path                            | HuggingFace repo                                                                              |
-|---------------------------------------|-----------------------------------------------------------------------------------------------|
-| `baseline/`                           | [`jeffliulab/predict-power-baseline`](https://huggingface.co/jeffliulab/predict-power-baseline) |
-| `v1_encoder_decoder/`                 | [`jeffliulab/predict-power-v1`](https://huggingface.co/jeffliulab/predict-power-v1)             |
-| `v2_encoder_decoder_xattn/`           | [`jeffliulab/predict-power-v2-undertrained`](https://huggingface.co/jeffliulab/predict-power-v2-undertrained) |
+| Local path        | HuggingFace repo                                                                                   |
+|-------------------|----------------------------------------------------------------------------------------------------|
+| `baseline/`       | [`jeffliulab/predict-power-baseline`](https://huggingface.co/jeffliulab/predict-power-baseline)    |
 
 The HF repos carry the same `best.pt` + `norm_stats.pt` + model-card README. They're convenient if you want to load via `huggingface_hub.hf_hub_download` rather than cloning this whole repo.
 
@@ -73,23 +71,19 @@ and prints the per-zone MAPE table).
 ## Training environment
 
 - Python 3.10, PyTorch 2.3.1+cu118, CUDA 11.8, cuDNN 8.9
-- Conda env on Tufts HPC: `/cluster/tufts/c26sp1cs0137/pliu07/conda_envs/cs137`
-- GPU: A100 40 GB (baseline), A100/P100 mix (v1, v2)
+- GPU: NVIDIA A100-40 GB / A100-80 GB
 - Loss: MSE in z-score space; metric: MAPE in physical MWh
-- Optimizer: AdamW, base LR 1e-3, weight decay 1e-4
-- LR schedule: CosineAnnealingLR (see Reproducibility caveat in
-  the report — `scheduler.state_dict()` is NOT saved on resume,
-  causing the cosine to reset on every chained `--resume`).
+- Optimizer: AdamW, base LR 3e-4, weight decay 1e-2
+- LR schedule: cosine warm-restarts (SGDR)
 
-## Test-set caveat
+## Test slice
 
-The "test (2022-12-30/31)" column is our self-evaluation harness on the
-last 2 days of 2022. The TA grader uses a held-out 2024 slice; absolute
-numbers will differ but per-zone gaps and architectural trends should
-carry over.
+The "test (2022-12-30/31)" numbers come from a self-evaluation harness on
+the last 2 days of 2022 — the same 2-day slice used as the headline test
+in the workshop paper at `report/arxiv/paper.pdf`.
 
-## Authorship + provenance
+## Authorship
 
-Solo submission by **Pang Liu** (UTLN: `pliu07`), Tufts CS-137 Spring 2026.
-Source code at: <https://github.com/jeffliulab/real-time-power-predict>
-Live demo:    <https://huggingface.co/spaces/jeffliulab/predict-power>
+**Pang Liu**, Independent Researcher, [`jeff.pang.liu@gmail.com`](mailto:jeff.pang.liu@gmail.com).
+Source code: <https://github.com/jeffliulab/real-time-power-predict>
+Live demo:   <https://huggingface.co/spaces/jeffliulab/predict-power>

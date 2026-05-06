@@ -1,10 +1,9 @@
-# Conda environment matching the persistent HPC env at
-# /cluster/tufts/c26sp1cs0137/pliu07/conda_envs/cs137.
+# Conda environment used to train and evaluate the predict-power baseline.
 #
-# Build:    conda env create -p ./conda_envs/cs137 -f environment.yml
-# Activate: conda activate ./conda_envs/cs137
+# Build:    conda env create -p ./conda_envs/predict-power -f environment.yml
+# Activate: conda activate ./conda_envs/predict-power
 
-name: cs137
+name: predict-power
 channels:
   - pytorch
   - nvidia

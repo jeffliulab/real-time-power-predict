@@ -1,14 +1,12 @@
 """
-Self-contained Part 1 evaluator.
+Self-contained baseline evaluator.
 
-Drop-in replacement for the TA's evaluate.py while the course modules
-(class/default, cs137/2026spring) are unavailable on the cluster.
+Loads the CNN-Transformer baseline checkpoint, runs inference on the
+last N days of 2022 (default: 2), and computes per-zone MAPE in
+physical MWh space using the same formula train.py uses during
+validation.
 
-Loads our checkpoint, runs inference on the last N days of 2022 (matching
-the TA evaluator default of 2), computes MAPE in physical space using the
-same formula train.py uses during validation.
-
-Usage (on a compute node):
+Usage:
     python scripts/self_eval.py \
         --ckpt runs/cnn_transformer_baseline/checkpoints/best.pt \
         --n_days 2
@@ -45,7 +43,7 @@ def parse_args():
     p.add_argument("--norm_stats", type=str,
                    default="runs/cnn_transformer_baseline/norm_stats.pt")
     p.add_argument("--data_root", type=str,
-                   default="/cluster/tufts/c26sp1cs0137/data/assignment3_data")
+                   default="data")
     p.add_argument("--year", type=int, default=2022)
     p.add_argument("--n_days", type=int, default=2,
                    help="How many final days of the year to test on")

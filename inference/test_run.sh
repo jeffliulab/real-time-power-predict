@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # inference/test_run.sh — self-evaluate the trained baseline on the
 # last 2 days of 2022 (the 2-window slice referenced throughout the
-# report and submission README).
+# report).
 #
 # Thin wrapper around scripts/self_eval.py. The latter loads the
-# checkpoint, runs inference on the cluster's data slice, and prints
+# checkpoint, runs inference on the local data slice, and prints
 # per-zone MAPE in physical MWh space.
 #
-# Usage (from the repo root, inside the cs137 conda env):
+# Usage (from the repo root, inside the predict-power conda env):
 #   bash inference/test_run.sh
 #
 # Optional overrides:

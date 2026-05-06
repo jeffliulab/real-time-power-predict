@@ -445,7 +445,7 @@ with gr.Blocks(title="ISO-NE Energy Demand Forecast",
                  theme=gr.themes.Default(primary_hue="blue")) as demo:
     gr.Markdown(
         "# ⚡ Multi-Modal Deep Learning for Energy Demand Forecasting\n"
-        "**Author:** Pang Liu · Tufts CS-137 · "
+        "**Author:** Pang Liu · Independent Researcher · "
         "[GitHub](https://github.com/jeffliulab/real-time-power-predict)\n\n"
         "Live tab pulls real ISO-NE per-zone demand + real HRRR weather "
         "(history analyses + forecast-cycle predictions) and runs the trained "

@@ -5,10 +5,9 @@
   "test_slice": "last 2 days of 2022",
   "models": {
     "cnn_transformer_baseline": {
-      "description": "Part 1 baseline — single Transformer encoder over (S+24)*(P+1) flattened tokens",
+      "description": "Baseline — single Transformer encoder over (S+24)*(P+1) flattened tokens",
       "params_millions": 1.75,
       "run_dir": "runs/cnn_transformer_baseline/",
-      "submission_path_hpc": "evaluation/part1-models/pangliu/",
       "results": {
         "val_mape_2021": 6.92,
         "val_mape_best_epoch": 12,
@@ -26,13 +25,12 @@
         "train_years": [2019, 2020],
         "val_years": [2021]
       },
-      "status": "submitted, verified"
+      "status": "released as v1.5 baseline"
     },
     "cnn_encoder_decoder": {
-      "description": "Part 2 — encoder (history-only) + decoder (24 future queries cross-attend to mem_hist)",
+      "description": "Encoder-decoder variant — encoder (history-only) + decoder (24 future queries cross-attend to mem_hist)",
       "params_millions": 2.29,
       "run_dir": "runs/cnn_encoder_decoder/",
-      "submission_path_hpc": "evaluation/part2-models/pangliu/",
       "results": {
         "val_mape_2022_at_epoch6": 8.63,
         "test_mape_2022_last2d_epoch6_snapshot": 6.82,
@@ -53,13 +51,12 @@
         "train_years": [2019, 2020, 2021],
         "val_years": [2022]
       },
-      "status": "training (chain: 36804770 -> 36804771 -> 36804772)"
+      "status": "ablation only — not part of the v1.5 release"
     },
     "cnn_encoder_decoder_xattn": {
-      "description": "Part 2 ablation — encoder-decoder + future-weather cross-attention branch in decoder",
+      "description": "Ablation — encoder-decoder + future-weather cross-attention branch in decoder",
       "params_millions": 2.42,
       "run_dir": "runs/cnn_encoder_decoder_xattn/",
-      "submission_path_hpc": "(not submitted; ablation only)",
       "results": "TBD — pending v2 chain training",
       "training_config": {
         "epochs_total_planned": 24,
@@ -71,7 +68,7 @@
         "train_years": [2019, 2020, 2021],
         "val_years": [2022]
       },
-      "status": "queued (chain: 36804839 -> 36804840 -> 36804841, deps on v1 chain)"
+      "status": "ablation only — not part of the v1.5 release"
     }
   }
 }

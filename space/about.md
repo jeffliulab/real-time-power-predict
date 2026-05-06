@@ -1,6 +1,6 @@
 ## About this demo
 
-This Space runs the trained CNN-Transformer baseline from our CS-137 final project on **fully real, live ISO New England inputs**, blended with **Chronos-Bolt-mini** (Amazon, 21 M params, Apache-2.0, zero-shot on demand history alone) in a per-zone weighted ensemble.
+This Space runs a trained CNN-Transformer baseline on **fully real, live ISO New England inputs**, blended with **Chronos-Bolt-mini** (Amazon, 21 M params, Apache-2.0, zero-shot on demand history alone) in a per-zone weighted ensemble.
 
 There are two tabs:
 
@@ -64,4 +64,4 @@ $\alpha_z$ values come from a grid search on a 14-day validation window in 2022.
 - 📄 [Final report (PDF)](https://github.com/jeffliulab/real-time-power-predict/blob/main/report/submission/submission_report.pdf)
 - 💻 [Main code repo](https://github.com/jeffliulab/real-time-power-predict)
 - 🤖 [Auxiliary data repo (cron-refreshed backtest data)](https://github.com/jeffliulab/new-england-real-time-power-predict-data)
-- 👤 Author: **Pang Liu** · `pliu07` · Tufts CS-137
+- 👤 Author: **Pang Liu** · Independent Researcher · [`jeff.pang.liu@gmail.com`](mailto:jeff.pang.liu@gmail.com)

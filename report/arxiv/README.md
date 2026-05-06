@@ -6,9 +6,7 @@ England day-ahead per-zone demand, focused on a quantitative drift
 case study (May 2025 vs May 2026) aligned with state-level BTM solar
 buildout.
 
-This is the arXiv version. The CS-137 final-submission version sits at
-`../submission/submission_report.pdf` (gitignored, local only) and is
-preserved verbatim for course-grading provenance.
+This is the arXiv version, pinned at the **v1.5** release tag.
 
 ## Build
 
@@ -50,7 +48,6 @@ report/arxiv/
 ├── appendix_f_full_tables.tex    F. Full per-window per-zone tables
 ├── appendix_g_repro.tex          G. Reproducibility
 ├── appendix_h_attention.tex      H. Attention diagnostics (compressed)
-├── appendix_i_ai_disclosure.tex  I. AI-tool disclosure
 ├── data/
 │   ├── validation_dec30_2022.json
 │   ├── multi_window_results.json

@@ -2,10 +2,9 @@
 
 This directory documents and provides **runnable skeleton scripts** to
 reconstruct the training dataset (2019–2023) from public sources. The
-canonical course-staff copy lives at
-`/cluster/tufts/c26sp1cs0137/data/assignment3_data/` on Tufts HPC; if
-that mirror disappears (or you want to reproduce on another cluster /
-laptop), use these scripts.
+canonical training-time copy lived on Tufts HPC; for reproduction on
+another cluster or laptop, use these scripts to rebuild it from the
+public ISO-NE and NOAA archives.
 
 ## Final on-disk layout (what the model expects)
 
@@ -94,7 +93,7 @@ These scripts are **runnable skeletons**. They have full code paths
 `interp` to a target lat/lon grid, demand-CSV joins, gap-filling) but
 have NOT been tested end-to-end on a multi-day window. Running the
 full 2019–2023 download takes hours of network I/O and we did not
-exhaust that test budget for this submission.
+exhaust that test budget for this release.
 
 Things a re-implementer should validate before trusting the output:
 
@@ -105,7 +104,7 @@ Things a re-implementer should validate before trusting the output:
    returns different names (e.g., `t2m` instead of `TMP`), update the
    `_CHANNEL_MAP` in `fetch_hrrr_weather.py`.
 2. **Grid resolution.** We re-grid to `(450, 449)` covering ~7° latitude
-   × ~8° longitude. The original course-staff slice was at this exact
+   × ~8° longitude. The original training slice was at this exact
    resolution; verify the regridded output has the right corner
    coordinates (printed by `build_dataset.py`).
 3. **Time alignment.** HRRR analysis files are stamped at top-of-hour UTC.
@@ -114,7 +113,7 @@ Things a re-implementer should validate before trusting the output:
    demand CSV vs the corresponding weather files for consistent UTC
    timestamps.
 4. **Normalization stats.** After rebuilding, recompute `norm_stats.pt`
-   from the new dataset (don't reuse the cluster's). The model is
+   from the new dataset (don't reuse the bundled one). The model is
    sensitive to z-score statistics; a 5% drift in `weather_mean` /
    `weather_std` will visibly change MAPE.
 5. **Holiday calendar.** `dataset.py` hard-codes the US federal
@@ -127,10 +126,10 @@ The scripts are deterministic given the same upstream archives. NOAA
 HRRR's S3 bucket is content-addressable and immutable for the years
 covered (2014-present). ISO-NE's demand CSVs are also archived
 without revision once published. So a re-run should produce the same
-weather tensors and demand values as the cluster's mirror, modulo any
-floating-point regridding non-determinism.
+weather tensors and demand values as the original training-time
+mirror, modulo any floating-point regridding non-determinism.
 
 The trained-model checkpoints in `pretrained_models/` are pinned to
-the *cluster's* dataset; exact-bit reproduction of MAPE numbers
-requires loading those checkpoints, not retraining on a re-fetched
-dataset.
+the original training-time dataset; exact-bit reproduction of MAPE
+numbers requires loading those checkpoints, not retraining on a
+re-fetched dataset.

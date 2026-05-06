@@ -31,19 +31,23 @@ Thumbs.db
 .claude/
 CLAUDE.md
 
-# Working drafts and Claude collaboration artifacts (kept locally, not synced)
-docs/
-# Report subfolders are local-only — final CS-137 deliverables are uploaded
-# directly to GradeScope from report/submission/, not synced through GitHub.
-# The arXiv subtree (report/arxiv/) is intentionally public, so we exclude
-# the *other* subfolders explicitly rather than the whole parent.
-report/tex/
-report/submission/
-report/figures/
-report/slides/
-report/project-report-这个之后弄/
-report/AUDIT_*.md
-report/README.md
+# Coursework artifacts: kept locally as a personal record but not part of
+# the public release. Includes assignment.pdf, the CS-137 final-report
+# tex/submission/figures/slides, the Tufts evaluator wrappers, and the
+# Tufts HPC SLURM batch files. Internal notes (progress.md, audit logs)
+# also live here.
+CS137-assignment/
+
+# docs/ holds only the public-facing arXiv paper PDF; everything else is
+# private working drafts kept locally.
+docs/*
+!docs/paper.pdf
+
+# report/ holds only the public arXiv source tree; legacy course-flavored
+# subfolders have been moved to CS137-assignment/report/.
+report/*
+!report/arxiv/
+!report/arxiv/**
 
 # LaTeX intermediates inside report/arxiv/ — built artifact (paper.pdf) IS
 # tracked, but the build cruft is not.
@@ -56,12 +60,10 @@ report/arxiv/paper.log
 report/arxiv/paper.out
 report/arxiv/paper.xdv
 
-# Generic data/ rule excludes the arXiv-specific JSON; force-add via exception.
+# Generic data/ rule (line 16-17 above) excludes the arXiv-specific JSON;
+# force-add via exception.
 !report/arxiv/data/
 !report/arxiv/data/**
-
-# Course material — don't redistribute (assignment.pdf, etc.)
-**/assignment.pdf
 
 # Recovery-only scratch files (session-specific)
 hpc相关信息供参考.txt
