@@ -1,0 +1,49 @@
+% =====================================================================
+% Appendix C — Bootstrap procedure
+% =====================================================================
+
+\section{Bootstrap procedure}
+\label{app:bootstrap}
+
+All MAPE confidence intervals reported in the main paper come from a
+non-parametric bootstrap implemented in
+\texttt{scripts/figures/bootstrap\_mape.py}. The resampling unit is the
+(forecast-day, zone) pair: within a 24-hour forecast block consecutive
+hourly residuals are highly autocorrelated, so resampling at the hour
+level dramatically underestimates variance. We resample
+(forecast-day, zone) tuples with replacement.
+
+\begin{lstlisting}[language=Python, basicstyle=\ttfamily\footnotesize,
+                    caption={Bootstrap procedure (paraphrased).},
+                    label={lst:bootstrap}]
+def mape_with_ci(preds, truth, n_resamples=1000, ci=0.95, seed=42):
+    # preds, truth shape: (n_forecasts, 24, 8)
+    # per (day, zone) MAPE, averaged over the 24-hour horizon
+    pair = abs(preds - truth) / abs(truth)              # (N, 24, 8)
+    pair_mape = pair.mean(axis=1) * 100                 # (N, 8)
+
+    flat = pair_mape.reshape(-1)                        # (N * 8,)
+    rng = np.random.default_rng(seed)
+    boot = rng.choice(flat, size=(n_resamples, flat.size),
+                       replace=True).mean(axis=1)
+    alpha = (1 - ci) / 2
+    return (flat.mean(),
+            quantile(boot, alpha),                       # 2.5 %
+            quantile(boot, 1 - alpha))                   # 97.5 %
+\end{lstlisting}
+
+For the validation experiment in §\ref{sec:validation}, where the
+truth comes from a single forecast day ($N = 1$), the bootstrap is over
+the 8 (1, zone) pairs only. This makes per-zone CIs degenerate
+(point estimate $=$ CI bounds; one observation per zone), but the
+overall CI on 8 pairs is meaningful. The per-zone CI in the
+deployment-period table (§\ref{sec:drift}, Table~\ref{tab:drift_overall})
+is over 7 forecasts $\times$ 1 zone within the column, with $1000$
+resamples each.
+
+\paragraph{Paired difference.} The pipeline-equivalence diff (live
+$-$ cluster) in §\ref{sec:validation} is bootstrapped as a paired
+difference over the 8 (day, zone) pairs:
+\texttt{diff\_with\_ci(live, cluster, truth)} resamples the
+\emph{difference} between per-pair MAPEs and reports the CI; if the CI
+excludes zero on either side, the systematic offset is detected.

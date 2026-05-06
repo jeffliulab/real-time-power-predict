@@ -6,26 +6,24 @@
 \thispagestyle{empty}
 
 \input{sec_intro}
-\input{sec_relwork}
-\input{sec_data}
-
-\partdivider{Part I --- Design \& Training}
-\input{sec_part1_design}
-
-\partdivider{Part II --- Public Deployment \& Findings}
-\input{sec_part2_deployment}
-
+\input{sec_setup}
+\input{sec_validation}
+\input{sec_drift}
+\input{sec_btm}
 \input{sec_discussion}
 
 \bibliographystyle{plainnat}
 \bibliography{refs}
 
 \appendix
-\input{appendix_a_hrrr_fetcher}
-\input{appendix_b_iso_ne_endpoint}
-\input{appendix_c_datasheet}
-\input{appendix_d_repro}
-\input{appendix_e_attention}
-\input{appendix_f_ai_disclosure}
+\input{appendix_a_model}
+\input{appendix_b_hparams}
+\input{appendix_c_bootstrap}
+\input{appendix_d_baselines}
+\input{appendix_e_forecast_shift}
+\input{appendix_f_full_tables}
+\input{appendix_g_repro}
+\input{appendix_h_attention}
+\input{appendix_i_ai_disclosure}
 
 \end{document}

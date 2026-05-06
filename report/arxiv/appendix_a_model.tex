@@ -1,0 +1,40 @@
+% =====================================================================
+% Appendix A — Model architecture
+% =====================================================================
+
+\section{Model architecture}
+\label{app:model}
+
+The deployed baseline (\texttt{space/models/cnn\_transformer\_baseline.py})
+is a 1.75-M-parameter multi-modal CNN-Transformer:
+\begin{align}
+\text{spatial branch}\quad   \mathbf{S}_t &= \mathrm{CNN}(X_t) \in \mathbb{R}^{P\times D},                       \;\; t \in [t-S, t+24], \\
+\text{tabular branch}\quad   \mathbf{T}_t &= \mathrm{Linear}([Y_t \,\|\, C_t]) \in \mathbb{R}^{D},               \\
+\text{token sequence}\quad   \mathbf{Z} &= \mathrm{Concat}_t [\mathbf{S}_t, \mathbf{T}_t] + \text{pos.\ emb}, \\
+\text{encoder}\quad          \mathbf{H} &= \mathrm{TransformerEncoder}_{L=4}(\mathbf{Z}),                       \\
+\text{prediction head}\quad  \hat Y_{t+1:t+24} &= \mathrm{MLP}(\mathbf{H}_{\text{future-tabular}}).
+\end{align}
+The shared CNN trunk produces $P=64$ spatial tokens (an $8\times 8$
+grid) per timestep at hidden dim $D=128$. Total parameter count: 1.75~M.
+
+\paragraph{HRRR regrid.}
+Native HRRR is on a Lambert-conformal grid at $1059\times 1799$ cells.
+We crop with a $1.5^{\circ}$ margin around the New England bbox
+($40.5\text{--}47.5^{\circ}$N, $-74\text{--}-66^{\circ}$E), build a
+Delaunay triangulation on the cropped source points, compute
+barycentric weights for our $450 \times 449$ regular lat/lon target
+grid, and reuse those weights across all 7 channels and all timesteps
+($\sim 10$~ms per channel after a $\sim 0.3$~s setup). This matches
+\texttt{xarray.interp(method="linear")} used at training to within
+numerical precision.
+
+\paragraph{Channels.}
+Seven channels in fixed order: $\texttt{TMP}$ (2-m air temperature, K),
+$\texttt{RH}$ (2-m relative humidity, \%), $\texttt{UGRD}/\texttt{VGRD}$
+(10-m wind, m/s), $\texttt{GUST}$ (surface wind gust, m/s),
+$\texttt{DSWRF}$ (downward shortwave radiation flux, W/m$^2$), and
+$\texttt{APCP\_1hr}$ (1-hour accumulated precipitation, kg/m$^2$). For
+HRRR forecast hours, the APCP search regex does not match the
+operational forecast files' accumulation window, and we zero-fill that
+single channel; the impact on MAPE is bounded $<$1~pp
+(Appendix~\ref{app:forecast_shift}).

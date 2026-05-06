@@ -58,12 +58,26 @@ def main():
             ax.set_ylabel("MWh", fontsize=9)
 
     axs[0, 0].legend(loc="upper left", fontsize=8.5)
+    ci = d.get("bootstrap_ci", {})
+    if ci:
+        cl = ci["cluster_overall_mape"]
+        lv = ci["live_overall_mape"]
+        df = ci["diff_live_minus_cluster"]
+        title2 = (
+            f"Cluster MAPE = {cl['point']:.2f} % "
+            f"[95 % CI: {cl['ci_low']:.2f}-{cl['ci_high']:.2f}], "
+            f"Live MAPE = {lv['point']:.2f} % "
+            f"[{lv['ci_low']:.2f}-{lv['ci_high']:.2f}], "
+            f"Diff = {df['point']:+.3f} pp "
+            f"[{df['ci_low']:+.3f}, {df['ci_high']:+.3f}]")
+    else:
+        title2 = (
+            f"Overall MAPE: cluster {d['cluster_overall_mape']:.2f}% vs "
+            f"live {d['live_overall_mape']:.2f}%, max element diff "
+            f"{d['max_abs_diff_mw']:.0f} MW ({d['max_rel_diff_pct']:.1f}%)")
     fig.suptitle("Pipeline-equivalence check on 2022-12-30: cluster's stored "
-                  "prediction vs live deployment rerun\n"
-                  f"Overall MAPE: cluster {d['cluster_overall_mape']:.2f}\\% vs "
-                  f"live {d['live_overall_mape']:.2f}\\%, max element diff "
-                  f"{d['max_abs_diff_mw']:.0f} MW ({d['max_rel_diff_pct']:.1f}\\%)",
-                  fontsize=11)
+                  "prediction vs live deployment rerun\n" + title2,
+                  fontsize=10.5)
     plt.tight_layout()
     plt.subplots_adjust(top=0.92)
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)

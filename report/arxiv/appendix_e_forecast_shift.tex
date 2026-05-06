@@ -1,0 +1,43 @@
+% =====================================================================
+% Appendix E — Future-weather forecast vs analyses shift
+% =====================================================================
+
+\section{Future-weather forecast vs analyses shift}
+\label{app:forecast_shift}
+
+The trained baseline saw HRRR f00 analyses for both the history
+\emph{and} future weather windows during training (privileged future
+information). At deployment we cannot peek at future analyses, so we
+substitute HRRR f01..f24 forecasts from the most recent long cycle
+issued before $T$. This appendix isolates the input-distribution shift
+this substitution introduces.
+
+\paragraph{Procedure.}
+We pick five in-training-window dates with full HRRR forecast cycle
+coverage (2022-12-14, -19, -22, -28, -30) and run the baseline twice
+per date:
+\begin{itemize}\setlength\itemsep{1pt}
+  \item Setting A (training-distribution): future weather $=$ 24 HRRR
+    f00 analyses for valid hours $[T, T+23]$.
+  \item Setting B (deployable):              future weather $=$ HRRR
+    f01..f24 from the latest long cycle issued before $T$.
+\end{itemize}
+Both settings use the same history-weather (24 f00 analyses for
+$[T-24, T-1]$). The only thing that differs is the future-weather
+input. Implementation:
+\texttt{scripts/validation/future\_weather\_shift\_quantify.py}.
+
+\paragraph{Result.}
+Across the 5 dates, the deployable setting (B) adds an MAPE penalty of
+\PHFCSHIFTPP{} pp [95~\% CI: \PHFCSHIFTLO{}, \PHFCSHIFTHI{}] relative
+to the training-distribution setting (A). The penalty is smaller than
+the deployment-period drift documented in §\ref{sec:drift} (a few
+tenths of a percentage point vs $\sim 20$ pp), so substituting
+forecasts for analyses is not the dominant explanation for the
+year-over-year drift.
+
+\paragraph{Per-date breakdown.}
+Specific dates and per-zone numbers are saved in
+\texttt{report/arxiv/data/future\_weather\_shift.json}. The per-date
+gap is small and approximately stationary across the five dates, with
+the largest single-date gap on \PHFCMAXDATE{}.

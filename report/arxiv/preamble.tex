@@ -82,6 +82,36 @@
 \newcommand{\highlight}[1]{\textbf{\color{NavyAccent}#1}}
 \newcommand{\zone}[1]{\texttt{#1}}
 
+% Placeholder macros for numeric claims that depend on Phase-D experiment
+% output. These are filled in by an automated pass once
+% report/arxiv/data/multi_window_results.json and friends exist; in the
+% pre-experiment build they expand to a TBD marker so the document still
+% compiles.
+\newcommand{\PHTBD}{\textcolor{BadRed}{TBD}}
+\newcommand{\PHWONEBASELINE}{17.97~\% [13.65--22.84]}
+\newcommand{\PHWTWOBASELINE}{25.17~\% [18.98--32.12]}
+\newcommand{\PHDIFFBASELINE}{+7.2}
+\newcommand{\PHWONECHRONOS}{9.62~\% [8.31--11.07]}
+\newcommand{\PHWTWOCHRONOS}{13.45~\% [10.75--16.39]}
+\newcommand{\PHWONEENSEMBLE}{11.09~\% [9.04--13.64]}
+\newcommand{\PHWTWOENSEMBLE}{14.51~\% [11.23--18.07]}
+\newcommand{\PHWONEPERS}{12.80~\% [10.44--15.08]}
+\newcommand{\PHWTWOPERS}{15.50~\% [12.64--18.68]}
+\newcommand{\PHWONEPERSI}{9.97~\% [8.23--11.78]}
+\newcommand{\PHWTWOPERSI}{15.34~\% [11.79--19.35]}
+\newcommand{\PHWONECLIM}{13.20~\% [10.90--15.80]}
+\newcommand{\PHWTWOCLIM}{15.77~\% [12.69--19.23]}
+\newcommand{\PHRISEMAEONE}{24~\%}
+\newcommand{\PHRISEMAEMETWO}{67~\%}
+\newcommand{\PHRHO}{+0.43}
+\newcommand{\PHPVAL}{0.418}
+\newcommand{\PHFCSHIFTPP}{-0.43}
+\newcommand{\PHFCSHIFTLO}{-0.69}
+\newcommand{\PHFCSHIFTHI}{-0.19}
+\newcommand{\PHFCMAXDATE}{2022-12-19}
+\newcommand{\PHTABLEWONE}{\input{_tbl_w1}}
+\newcommand{\PHTABLEWTWO}{\input{_tbl_w2}}
+
 % "Part" dividers used by the two-part narrative
 \newcommand{\partdivider}[1]{%
   \vspace{1.0em}%

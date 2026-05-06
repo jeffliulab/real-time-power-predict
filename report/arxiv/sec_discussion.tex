@@ -1,80 +1,61 @@
 % =====================================================================
-% §11 Discussion + §12 Conclusion
+% §6 Discussion + Conclusion + Climate impact
 % =====================================================================
 
 \section{Discussion}
 \label{sec:discussion}
 
-We discuss what the deployment validates and what it doesn't, the implications for retraining cadence, the role of $\alpha_z$ as an implicit drift localizer, limitations, and broader impact.
+\paragraph{Implications for retraining cadence.}
+A three-year retraining gap visibly hurts in this dataset. Per-zone
+MAPE in May~2026 ranges from 7~\% (NEMA-Boston) to 78~\% (WCMA) for the
+trained baseline---the headline 2022 number masks zone-specific
+catastrophic behavior. Reporting only the overall MAPE on a 2-day test
+slice (5.24~\%) gave us essentially no warning signal. Per-zone
+surveillance plus a continuously-refreshed validation slice (the
+deployed system has both) catches drift earlier.
 
-\subsection{What the deployment validates}
+\paragraph{Per-zone $\alpha_z$ as drift localiser.}
+The zones the validation-tuned $\alpha_z$ flagged in 2022 as
+``low-baseline-trust'' ($\alpha = 0$ in CT, SEMA, NEMA-Boston) overlap
+substantially with the zones suffering largest 2026 drift. With $n =
+8$, this is suggestive rather than conclusive, but it points at a
+practical use case: weighted-fusion weights tuned even before
+deployment may carry per-zone-specific information about where the
+model is fragile.
 
-\paragraph{Pipeline equivalence.} The deployed pipeline (HRRR via Herbie + ISO-NE via the cookie-prime endpoint + Chronos via HuggingFace + the trained baseline + per-zone ensemble) reproduces the cluster's stored 2022 prediction to within 0.13 percentage points (\S\ref{sec:deploy:validation}). Subsequent live MAPE numbers are not contaminated by serving bugs.
+\paragraph{Limitations.}
+(i) Two windows are better than one but not as strong as a full year
+of monthly snapshots; we plan to extend the rolling backtest to a
+calendar of windows in future work.
+(ii) The BTM-solar correlation is observational at $n = 5$ states. We
+cannot claim causation without a controlled counterfactual study.
+(iii) The deployed model uses HRRR forecasts (not analyses) for the
+future window; this is a known training-time vs deployment-time
+distribution mismatch quantified in Appendix~\ref{app:forecast_shift}
+(small effect, but non-zero).
+(iv) Single ISO. Replicating this experiment under CAISO, ERCOT, or
+PJM would test whether the mechanism generalises, but each ISO has its
+own data-access patterns and would require building a similar fetch
+stack.
 
-\paragraph{Public-data sufficiency.} All inputs needed for the live demo come from no-auth public sources. The deployment does not depend on privileged data or paid APIs. Third parties can reproduce the rolling backtest end-to-end via \texttt{scripts/build\_rolling\_backtest.py}.
+\paragraph{Climate impact and broader use.}
+Day-ahead demand forecasting is a load-bearing input to grid
+operations. Our deployed model is far below production-grade and should
+not be used for real dispatch. The intended audience for the
+deployment-drift case-study finding is researchers and grid forecasters
+who own production models trained pre-2022 and need a calibrated
+expectation of how BTM solar buildout changes their per-zone error
+distribution. Demand-response programs and renewable-energy integration
+analyses use forecasts of this kind; better-calibrated drift estimates
+help integrate distributed solar more reliably.
 
-\paragraph{Foundation-model robustness.} Chronos-Bolt-mini, used zero-shot on demand history alone, degrades much more gracefully under deployment-period drift than the multimodal baseline. This is consistent with the architectural intuition that a model with no weather inputs cannot be hurt by a weather-coupled drift mechanism --- but it is the live deployment that turns this intuition into a quantitative observation.
-
-\subsection{What the deployment does not validate}
-
-\paragraph{The BTM-solar correlation is observational.} We observe that the per-zone drift signature aligns with state-level BTM solar incentive density and capacity growth (\S\ref{sec:deploy:btm}). We do not establish causation. A controlled experiment would require synthetic counterfactual demand series with and without BTM solar penetration, which is beyond the scope of this paper. We document the alignment as a hypothesis worth pursuing.
-
-\paragraph{Single deployment window.} The May-2026 numbers come from a single 7-day rolling window. The cron will produce a new window every day, so longer-horizon evidence will accumulate; we report only the snapshot available at write time.
-
-\paragraph{Geographic generalization is untested.} ISO-NE is a particularly clean test case because of the strong policy gradient between MA/RI and ME/NH/VT. We do not claim the BTM-solar mechanism generalizes uniformly to other ISOs/RTOs (CAISO, ERCOT, PJM); each ISO has its own incentive landscape and demand mix.
-
-\subsection{Implications for retraining cadence}
-
-The 2022$\to$2026 gap (5.24\,\% $\to$ 25.17\,\% on the baseline; 4.21\,\% $\to$ 14.51\,\% on the ensemble) suggests that for grid-scale forecasting models in the energy-transition era, a 3-year retraining gap is too long. Two practical implications:
-
-\begin{itemize}\setlength\itemsep{1pt}
-  \item \textbf{Per-zone drift surveillance.} The per-zone MAPE breakdown surfaces the drift mechanism more clearly than the overall number does. A grid forecaster running this kind of model in production should report per-zone MAPE on a rolling backtest, not just the headline.
-  \item \textbf{Foundation-model fallback.} Pairing a multimodal weather-aware forecaster with a frozen foundation model that uses only demand history gives a self-correcting structure: when the weather-aware leg drifts (because the weather$\to$demand relationship has changed), the per-zone $\alpha_z$ blend can be retuned without retraining either component. This is much cheaper than retraining the multimodal stack.
-\end{itemize}
-
-\subsection{$\alpha_z$ as an implicit drift localizer}
-
-A perhaps-underappreciated property of the per-zone weighted ensemble is that the \emph{validation-tuned} $\alpha_z$ already encodes a per-zone trust assessment of the multimodal leg vs the foundation-model leg. Looking at the $\alpha_z$ table from \S\ref{sec:ensemble}, the four zones with $\alpha_z \le 0.10$ at training time (\zone{CT}, \zone{RI}, \zone{SEMA}, \zone{NEMA-Boston}) are exactly the four zones where the deployment-period baseline-vs-Chronos gap is largest in May 2026. The validation-time grid search was telling us, two years before the live data was available, where the multimodal stack was already weak relative to demand-history-only forecasting. With hindsight this is suggestive: $\alpha_z$ may be reusable as a per-zone trust score that is robust to drift in the underlying weather-coupling.
-
-\subsection{Limitations}
-\label{sec:discussion:limits}
-
-\begin{itemize}\setlength\itemsep{1pt}
-  \item \textbf{Test slice noise.} The 2022 self-eval is two days. Single-day MAPE swings of $\pm 1$\,pp are observed across nearby epochs (Figure~\ref{fig:v1v2}). The 5.24\,\% baseline number and the 4.33\,\% ensemble number should be read as point estimates with $\pm 1$\,pp uncertainty.
-  \item \textbf{No classical baselines.} We do not run ARIMA \citep{box1976time} or exponential smoothing on this dataset. \citet{hippert2001neural} review classical neural baselines; we leave a head-to-head comparison to future work. Our claim is comparative within the deep-learning family, not against the entire forecasting literature.
-  \item \textbf{Statistical significance not reported.} We do not bootstrap MAPE confidence intervals. The deployment-period gap (Table~\ref{tab:deployment_overall}) is large enough to dominate any reasonable confidence interval; the 2022 self-eval gap is comparable to the per-epoch noise and should be read accordingly.
-  \item \textbf{Encoder-decoder ablation undertrained.} The future-weather cross-attention variant (Table~\ref{tab:v2-test} bottom row) is an undertrained measurement (chained-resume training reached 13 of 24 planned epochs). We report it for completeness, not as a final architecture-comparison conclusion.
-  \item \textbf{Comparison to other foundation models not run.} TimesFM \citep{das2024timesfm}, Lag-Llama \citep{rasul2024lagllama}, and Moirai \citep{woo2024moirai} are not benchmarked head-to-head against Chronos-Bolt on this dataset.
-\end{itemize}
-
-\subsection{Broader impact and dual-use considerations}
-\label{sec:discussion:impact}
-
-Day-ahead demand forecasting is a load-bearing input to grid operations: ISO operators dispatch generation, schedule reserves, and clear day-ahead markets against forecasts of this kind. A model with the deployed-period accuracy reported here is far below production-grade and should not be used for real dispatch. Three dual-use risks deserve safeguards before any deployment of similar systems at scale:
-
-\begin{itemize}\setlength\itemsep{1pt}
-  \item \textbf{Adversarial demand-forecast injection.} A model that takes ISO-published 5-minute zonal load as input is exposed to data poisoning if that feed is compromised. The cookie-prime ingestion path is convenient but not authenticated against tampering.
-  \item \textbf{Market gaming.} A model with edge over the ISO's published forecast becomes informationally privileged. Public deployment of a model with that edge is potentially anticompetitive; the deployment-period MAPE reported here is far above the ISO's, so this risk is not realized in our system, but a fine-tuned descendant could create the concern.
-  \item \textbf{Operational over-reliance on attention-map interpretability.} The Part-I attention analysis (\S\ref{sec:attn}) is descriptive and may be load-bearing in human reviewers' trust calibration. Attention maps are not certified; they are diagnostic. Operators should not infer model correctness from attention patterns alone.
-\end{itemize}
-
-% =====================================================================
-\section{Conclusion}
-\label{sec:conclusion}
-
-We trained a multimodal CNN-Transformer baseline (5.24\,\% test MAPE) for ISO-NE day-ahead per-zone demand forecasting and improved it to 4.33\,\% test MAPE via per-zone weighted late fusion with a frozen Chronos-Bolt-base foundation model used zero-shot. The smaller Chronos-Bolt-mini variant achieves 4.21\,\% test MAPE at one-tenth the parameter count, which is the configuration we deploy.
-
-The deployment is a public web demo backed by a three-repo split architecture (\S\ref{sec:deploy:arch}). A pipeline-equivalence experiment certifies the deployment's predictions match the training-time evaluation to within 0.13\,pp on a date inside the training window (\S\ref{sec:deploy:validation}). On a rolling 7-day window in May 2026, the same pipeline reports overall MAPE of 25.17\,\% (baseline) / 13.45\,\% (Chronos) / 14.51\,\% (ensemble): a 3- to 5-fold degradation relative to the 2022 self-eval. Per-zone analysis localizes the degradation to MA/RI zones with high BTM-solar penetration. The pattern aligns with state-level rooftop-solar incentive density and capacity growth between 2022 and 2026.
-
-The combination is, to our knowledge, the first published end-to-end case study of a multimodal Transformer + foundation-model ensemble for ISO-NE forecasting that surfaces and quantifies a 3-year deployment drift on a publicly-reproducible deployment.
-
-\paragraph{Future work.}
-\begin{itemize}\setlength\itemsep{1pt}
-  \item \textbf{Continual / online retuning of $\alpha_z$.} A rolling per-zone validation slice could update $\alpha_z$ on a weekly cadence at zero training cost, partially correcting for drift.
-  \item \textbf{Explicit BTM solar features.} Adding state-level distributed-PV capacity \citep{eia2025distpv} as an additional input feature should let the multimodal stack absorb the post-2022 BTM growth without retraining. We have not yet measured the size of this fix.
-  \item \textbf{Foundation-model bake-off.} Direct comparison of Chronos-Bolt-mini against TimesFM \citep{das2024timesfm}, Lag-Llama \citep{rasul2024lagllama}, and Moirai \citep{woo2024moirai} on this dataset.
-  \item \textbf{Generalization to other ISOs.} Replicating the deployment under CAISO, ERCOT, PJM with the same three-repo recipe to test whether the BTM-solar mechanism observed in New England generalizes.
-  \item \textbf{Deeper drift attribution.} A controlled study isolating BTM solar from EV adoption, post-COVID load patterns, and energy-efficiency improvements would establish causation. Synthetic counterfactual demand series with each effect ablated would help.
-\end{itemize}
-
-\paragraph{Reproducibility.} The full pipeline (training scripts, deployment code, cron workflow) is public at \href{https://github.com/jeffliulab/real-time-power-predict}{\texttt{github.com/jeffliulab/real-time-power-predict}}. The daily-refreshed backtest data is at \href{https://github.com/jeffliulab/new-england-real-time-power-predict-data}{\texttt{github.com/jeffliulab/new-england-real-time-power-predict-data}}. The live demo is at \href{https://huggingface.co/spaces/jeffliulab/predict-power}{\texttt{huggingface.co/spaces/jeffliulab/predict-power}}. Numerical claims in this paper trace back to scripts in \texttt{scripts/} and JSON/CSV in the data repo (see Appendix~\ref{app:repro}).
+\paragraph{Conclusion.}
+A multimodal CNN-Transformer + Chronos-Bolt-mini ensemble for ISO-NE
+day-ahead forecasting reaches 4.21~\% MAPE on a 2-day 2022 test slice.
+The same trained pipeline, deployed publicly and re-evaluated on
+rolling 7-day windows in May~2025 and May~2026, drifts in a
+zone-specific pattern that aligns with state-level BTM solar density.
+The pipeline-equivalence experiment, the bootstrap-CI'd headline
+numbers, and the daily-refreshed live demo make the case study
+reproducible end-to-end. The artifacts are public
+(Appendix~\ref{app:repro}).

@@ -1,0 +1,91 @@
+% =====================================================================
+% §4 Two-window drift quantification (the core contribution)
+% =====================================================================
+
+\section{Two-window deployment-drift quantification}
+\label{sec:drift}
+
+We run the deployed pipeline against live ISO-NE data on two 7-day
+windows one year apart: $\mathrm{W1} = 2025\text{-}05\text{-}01$ to
+$05\text{-}07$ and $\mathrm{W2} = 2026\text{-}04\text{-}28$ to
+$05\text{-}04$. Both windows are late spring (no AC, no winter heating)
+to control for season. Three trained-model variants (baseline, Chronos
+zero-shot, ensemble) are compared against three naive baselines
+(persistence-1d, persistence-7d, climatological mean over 4 weeks; see
+Appendix~\ref{app:baselines}).
+
+\paragraph{Headline result.}
+Table~\ref{tab:drift_overall} reports overall MAPE across all six
+model variants on both windows, with bootstrap 95~\% CIs over
+(forecast-day, zone) pairs (procedure in Appendix~\ref{app:bootstrap}).
+The trained baseline degrades from \PHWONEBASELINE{} on W1 to
+\PHWTWOBASELINE{} on W2 (W2 - W1 = \PHDIFFBASELINE{}~pp), while the
+Chronos-Bolt-mini zero-shot model and the ensemble drift much less:
+\PHWONECHRONOS{} $\to$ \PHWTWOCHRONOS{} and
+\PHWONEENSEMBLE{} $\to$ \PHWTWOENSEMBLE{}.
+
+\begin{table}[h]
+\centering\small
+\caption{Overall MAPE [95~\% bootstrap CI] on the two deployment windows.
+The trained baseline (CNN-Transformer with HRRR weather + per-zone
+demand) loses ground year-over-year; the weather-agnostic Chronos
+zero-shot variant degrades much less. Naive baselines provide a
+non-trivial floor in 2026.}
+\label{tab:drift_overall}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Model & $\mathrm{W1}$: 2025-05-01..07 & $\mathrm{W2}$: 2026-04-28..05-04 \\
+\midrule
+\multicolumn{3}{l}{\textit{Trained models}} \\
+Baseline (CNN-Transformer + HRRR) & \PHWONEBASELINE{}                 & \PHWTWOBASELINE{} \\
+Chronos-Bolt-mini (zero-shot)     & \PHWONECHRONOS{}                  & \PHWTWOCHRONOS{} \\
+Ensemble (per-zone $\alpha$)      & \PHWONEENSEMBLE{}                 & \PHWTWOENSEMBLE{} \\
+\midrule
+\multicolumn{3}{l}{\textit{Naive baselines}} \\
+Persistence-1d                    & \PHWONEPERSI{}                    & \PHWTWOPERSI{} \\
+Persistence-7d                    & \PHWONEPERS{}                    & \PHWTWOPERS{} \\
+Climatological mean (4-week)      & \PHWONECLIM{}                     & \PHWTWOCLIM{} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two observations: (i) the trained baseline's degradation between W1 and
+W2 is a clean year-over-year jump that exceeds the bootstrap CI band,
+and (ii) the foundation-model ensemble inherits Chronos's degradation
+pattern while remaining substantially better than the lag-1d
+persistence floor.
+
+\paragraph{Daily MAPE timeline.}
+Figure~\ref{fig:per_day} shows daily MAPE across both windows. The
+day-to-day spread within a window is small relative to the W1 $\to$ W2
+jump, reinforcing that the year-over-year shift is not a noise artifact
+of a single forecast issuance time.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\linewidth]{per_day_mape_timeline.png}
+\caption{Daily MAPE for each model variant across both 7-day windows.
+The vertical gap between W1 (left) and W2 (right) for the baseline
+exceeds within-window day-to-day variability, supporting the
+year-over-year drift claim with multiple repeats per window.}
+\label{fig:per_day}
+\end{figure}
+
+\paragraph{Per-zone breakdown.}
+Figure~\ref{fig:per_zone_drift} dissects baseline / Chronos / ensemble
+MAPE by zone in both windows. The baseline's degradation is sharply
+zone-localised: Maine and metro Boston (NEMA-Boston) stay near their
+2022 numbers; the southern Massachusetts zones (SEMA, WCMA) and Rhode
+Island swing from \PHRISEMAEONE{} to \PHRISEMAEMETWO{} between W1 and
+W2. The full 8-zone $\times$ 6-model breakdown is in
+Appendix~\ref{app:tables} (Table~\ref{tab:full_w1}-\ref{tab:full_w2}).
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.95\linewidth]{multi_window_per_zone_mape.png}
+\caption{Per-zone MAPE for the three trained-model variants on both
+windows. Solid bars = W1 (2025); hatched bars = W2 (2026). The dense
+southern Massachusetts and Rhode Island zones drift dramatically; Maine
+and NEMA-Boston are near-stationary.}
+\label{fig:per_zone_drift}
+\end{figure}

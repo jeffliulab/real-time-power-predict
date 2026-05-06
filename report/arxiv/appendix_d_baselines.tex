@@ -1,0 +1,43 @@
+% =====================================================================
+% Appendix D — Naive baseline implementations
+% =====================================================================
+
+\section{Naive baselines}
+\label{app:baselines}
+
+Three naive baselines are run on the same forecast issuance points as
+the trained models, providing a floor for evaluating model
+contribution. Implementations live in
+\texttt{scripts/baselines/naive.py}.
+
+\paragraph{Persistence-1d.}
+$\hat y[h, z] = \mathrm{history}[-24 + h, z]$ — yesterday at the same
+hour. Respects diurnal periodicity but not weekday vs weekend.
+
+\paragraph{Persistence-7d.}
+$\hat y[h, z] = \mathrm{history}[-168 + h, z]$ — same hour last week.
+Respects weekly periodicity (weekday vs weekend, holiday-vs-not has its
+own confound when the holiday wraps).
+
+\paragraph{Climatological mean (4-week).}
+For each forecast hour $h \in [0, 24)$ and each zone $z$, average over
+all history hours whose (hour-of-day, day-of-week) tuple matches the
+forecast hour's, drawn from the most-recent 4 weeks:
+\begin{equation}
+\hat y[h, z] = \mathrm{mean}\bigl\{\,
+\mathrm{history}[i, z]\ :\
+i \in \mathrm{recent-672h}\
+\text{and}\
+(\mathrm{hour}(i), \mathrm{dow}(i)) = (\mathrm{hour}(h), \mathrm{dow}(h))
+\,\bigr\}.
+\end{equation}
+A 4-week window is the same as Chronos's context length. If no exact
+(hour, dow) match exists in the recent window, falls back to same-hour
+mean; final fallback is the zone-wise mean of the entire history.
+
+These three baselines are universally accepted as floor comparators in
+the load-forecasting literature \citep{hong2016probabilistic,
+hippert2001neural} and require no training. We do not run an ARIMA /
+Holt-Winters baseline in the main paper (cited in
+\S\ref{sec:setup}); these three together cover the relevant signal
+floor for a workshop case study.
