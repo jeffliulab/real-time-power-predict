@@ -1,6 +1,6 @@
 ## About this demo
 
-This Space runs a trained CNN-Transformer baseline on **fully real, live ISO New England inputs**, blended with **Chronos-Bolt-mini** (Amazon, 21 M params, Apache-2.0, zero-shot on demand history alone) in a per-zone weighted ensemble.
+This Space runs a trained CNN-Transformer baseline on **fully real, live ISO New England inputs**, blended with **Chronos-Bolt-mini** (Amazon, 21 M params, Apache-2.0, zero-shot on demand history alone) in a per-zone weighted ensemble. It is also the case study for our workshop paper on deployment drift and inference-time ensemble adaptation under behind-the-meter (BTM) solar buildout — see the [paper PDF](https://github.com/jeffliulab/real-time-power-predict/blob/main/docs/paper.pdf) and the v1.6 release notes in the [main README](https://github.com/jeffliulab/real-time-power-predict#v16-release-contents).
 
 There are two tabs:
 

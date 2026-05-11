@@ -117,11 +117,12 @@ from figures.bootstrap_mape import mape_with_ci                             # no
 
 
 DEFAULT_WINDOWS = [
-    ("W1", datetime(2025, 5, 1), datetime(2025, 5, 7)),
-    ("W2", datetime(2026, 4, 28), datetime(2026, 5, 4)),
+    ("W0", datetime(2022, 5, 1), datetime(2022, 5, 7)),     # bundled-CSV demand
+    ("W1", datetime(2025, 5, 1), datetime(2025, 5, 7)),     # ISO-NE 5-min live
+    ("W2", datetime(2026, 4, 28), datetime(2026, 5, 4)),    # ISO-NE 5-min live
 ]
 DAILY_FORECAST_HOUR = 0     # forecasts issued at 00:00 UTC each day
-OUT_PATH = ROOT / "report" / "arxiv" / "data" / "multi_window_results.json"
+OUT_PATH = ROOT / "report" / "arxiv" / "data" / "multi_year_drift.json"
 
 logger = logging.getLogger(__name__)
 
@@ -264,18 +265,55 @@ def summarise_window(forecasts: list[dict]) -> dict:
     return out
 
 
+# Bundled demand CSV (covers 2019-01-01 .. 2022-12-31). Used for older
+# windows where ISO-NE's rolling 5-min endpoint no longer serves data.
+_BUNDLED_CSV = ROOT / "pretrained_models" / "baseline" / "dump" / "demand_2019_2022_hourly.csv"
+_BUNDLED_DF_CACHE: Optional[pd.DataFrame] = None
+
+
+def _load_bundled_demand() -> pd.DataFrame:
+    """Lazy-load the bundled 2019-2022 hourly per-zone demand CSV."""
+    global _BUNDLED_DF_CACHE
+    if _BUNDLED_DF_CACHE is None:
+        if not _BUNDLED_CSV.exists():
+            raise RuntimeError(f"Bundled demand CSV not found at {_BUNDLED_CSV}")
+        df = pd.read_csv(_BUNDLED_CSV, parse_dates=["timestamp_utc"])
+        df = df.set_index("timestamp_utc")[ZONE_COLS]
+        _BUNDLED_DF_CACHE = df
+    return _BUNDLED_DF_CACHE
+
+
 def fetch_demand_for_window(start_dt: datetime, end_dt: datetime
                               ) -> pd.DataFrame:
-    """Fetch ISO-NE per-zone hourly demand covering chronos context +
-    forecast horizon for the given window."""
+    """Per-zone hourly demand covering chronos context + forecast horizon.
+
+    Dispatches between two sources:
+      - For windows whose required range is fully within 2019-2022, load
+        from the bundled `demand_2019_2022_hourly.csv` (no network needed).
+      - Otherwise call the live ISO-NE 5-min endpoint via `fetch_range`,
+        which covers a rolling ~15-month tail of recent data.
+
+    2023-2024 are not currently accessible per-zone via any public free
+    endpoint we have access to; callers should not pass such windows.
+    """
     earliest = start_dt - timedelta(hours=CHRONOS_CONTEXT + 24)
     latest = end_dt + timedelta(hours=FUTURE_LEN + 1)
     print(f"  Fetching ISO-NE per-zone demand "
            f"{earliest.date()} -> {latest.date()} (~{(latest-earliest).days+1} days)...",
            flush=True)
     t0 = time.time()
-    df = fetch_range(earliest, latest, hourly=True)
-    df = df[ZONE_COLS]
+    # Source dispatch: bundled CSV covers 2019-01-01..2022-12-31.
+    bundled_start = datetime(2019, 1, 1)
+    bundled_end = datetime(2022, 12, 31, 23, 0)
+    if earliest >= bundled_start and latest <= bundled_end:
+        df = _load_bundled_demand()
+        # Slice the requested range (DataFrame is hourly indexed).
+        df = df.loc[earliest:latest]
+        print(f"    [source: bundled CSV]")
+    else:
+        df = fetch_range(earliest, latest, hourly=True)
+        df = df[ZONE_COLS]
+        print(f"    [source: ISO-NE 5-min live endpoint]")
     if df.isna().any().any():
         n_missing = int(df.isna().any(axis=1).sum())
         if n_missing > 0:

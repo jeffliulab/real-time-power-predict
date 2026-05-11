@@ -14,7 +14,7 @@ short_description: Real-time day-ahead demand forecasting for ISO New England
 
 # ⚡ Multi-Modal Deep Learning for Energy Demand Forecasting
 
-Live demo of a trained CNN-Transformer baseline (1.75 M params), blended in a per-zone weighted ensemble with **Chronos-Bolt-mini** (Amazon, 21 M params, zero-shot on demand history).
+Live demo of a trained CNN-Transformer baseline (1.75 M params), blended in a per-zone weighted ensemble with **Chronos-Bolt-mini** (Amazon, 21 M params, zero-shot on demand history). The deployed system is also the case study for our workshop paper on deployment drift and inference-time ensemble adaptation under behind-the-meter (BTM) solar buildout — see [docs/paper.pdf](https://github.com/jeffliulab/real-time-power-predict/blob/main/docs/paper.pdf).
 
 **All inputs are now fully real** — no synthetic weather, no proportionally-split system demand:
 

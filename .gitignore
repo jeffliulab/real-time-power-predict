@@ -43,28 +43,12 @@ CS137-assignment/
 docs/*
 !docs/paper.pdf
 
-# report/ holds only the public arXiv source tree; legacy course-flavored
-# subfolders have been moved to CS137-assignment/report/.
-report/*
-!report/arxiv/
-!report/arxiv/**
-
-# LaTeX intermediates inside report/arxiv/ — built artifact (paper.pdf) IS
-# tracked, but the build cruft is not.
-report/arxiv/paper.aux
-report/arxiv/paper.bbl
-report/arxiv/paper.blg
-report/arxiv/paper.fdb_latexmk
-report/arxiv/paper.fls
-report/arxiv/paper.log
-report/arxiv/paper.out
-report/arxiv/paper.xdv
-
-# Generic data/ rule (line 16-17 above) excludes the arXiv-specific JSON;
-# force-add via exception.
-!report/arxiv/data/
-!report/arxiv/data/**
+# report/ — paper source is private from v1.6 onward; we ship only the
+# built docs/paper.pdf publicly. A local symlink at `report/arxiv` -> the
+# private working area (`本地文件/report/arxiv/`) lets the scripts keep
+# their familiar paths without leaking the private location into public
+# code. Both the symlink and any contents under report/ are gitignored.
+report/
 
 # Recovery-only scratch files (session-specific)
-hpc相关信息供参考.txt
-part1提交.txt
+本地文件

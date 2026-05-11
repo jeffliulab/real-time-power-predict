@@ -4,11 +4,12 @@
 [![zh](https://img.shields.io/badge/lang-中文-red.svg)](README_zh.md)
 
 <h1>ISO-NE 短期电力负荷预测</h1>
+<h3>实时系统 + 部署漂移研究 + Drift-Weighted 集成框架</h3>
 
 <p>
   <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.5-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
-  <img src="https://img.shields.io/badge/release-v1.5-brightgreen" alt="v1.5">
+  <img src="https://img.shields.io/badge/release-v1.6-brightgreen" alt="v1.6">
   <a href="https://huggingface.co/spaces/jeffliulab/predict-power">
     <img src="https://img.shields.io/badge/🤗%20实时演示-HF%20Space-yellow" alt="Live demo">
   </a>
@@ -18,12 +19,16 @@
 </p>
 
 <p>
-  多模态 CNN-Transformer + Chronos-Bolt-mini 零样本融合，预测 ISO 新英格兰 8 个负荷区下一天 24 小时的逐区电力需求。在 2022 年最后两天的测试切片上 baseline MAPE 5.24%，集成后 4.33%。已在 HuggingFace Space 公开部署，配套每日刷新的 7 日滚动回测；这套部署是论文 <a href="docs/paper.pdf">docs/paper.pdf</a> 的核心案例研究。
+  多模态 CNN-Transformer + Chronos-Bolt-mini 零样本融合，预测 ISO 新英格兰 8 个负荷区下一天 24 小时的逐区电力需求。在 2022 年末两天测试切片上 baseline MAPE 5.24%，集成后 4.21%。已在 HuggingFace Space 公开部署，配套每日刷新的 7 日滚动回测；以这套部署作为案例，研究 BTM 太阳能装机增长引发的部署漂移，并在论文 <a href="docs/paper.pdf">docs/paper.pdf</a> 中提出推断时的 drift-weighted 集成方案。
+</p>
+
+<p>
+  <strong>v1.6 新增内容</strong>：三窗口漂移轨迹（2022-05 / 2025-05 / 2026-04-05）、按小时 MAPE 分解（高 BTM 区域中午 MAPE 是非中午的 <strong>约 9 倍</strong>）、duck-curve 深度对比（WCMA +17pp vs ME +6.6pp）、以及新方法 <strong>drift-weighted ensemble re-weighting</strong>——在 14 天滚动 validation 上重拟合逐区 α，完全不重训模型。
 </p>
 
 <p>
   <strong>🌐 实时 demo</strong>：<a href="https://huggingface.co/spaces/jeffliulab/predict-power">huggingface.co/spaces/jeffliulab/predict-power</a> — 真实 ISO-NE 逐区负荷 + 真实 HRRR 天气，每日更新。<br>
-  <strong>📄 工作坊论文</strong>：<a href="docs/paper.pdf">docs/paper.pdf</a> —— 完整 LaTeX 源码在 <a href="report/arxiv/"><code>report/arxiv/</code></a>。<br>
+  <strong>📄 工作坊论文</strong>：<a href="docs/paper.pdf">docs/paper.pdf</a>（LaTeX 源码私有保留，等 arXiv 上传后开放）。<br>
   <strong>📦 自动数据仓库</strong>：<a href="https://github.com/jeffliulab/new-england-real-time-power-predict-data">jeffliulab/new-england-real-time-power-predict-data</a> —— GitHub Actions cron 每天 04:00 UTC 重建滚动回测。
 </p>
 
@@ -192,20 +197,22 @@ curl -s https://raw.githubusercontent.com/jeffliulab/new-england-real-time-power
 
 ---
 
-## v1.5 release 内容
+## v1.6 release 内容
 
-这是项目的正式公开发布版本。所有制品都钉死在 `v1.5` git tag。
+v1.6 在 v1.5 基础上加入：三窗口部署漂移轨迹（2022-05 / 2025-05 / 2026-04-05）、按小时 MAPE 分解 + duck-curve 深度证据（直接证据指向 BTM 太阳能机制）、drift-weighted 集成方法 + 3 个窗口的基准对比、Related Work 章节（覆盖 drift detection 和 foundation TS model 文献）、5 条面向部署系统的操作建议。所有制品钉死在 `v1.6` git tag。
 
 | 制品 | 位置 | 类型 |
 |---|---|---|
 | 训练好的 baseline (1.75 M 参数, 5.24% 测试 MAPE) | https://huggingface.co/jeffliulab/predict-power-baseline | 模型 |
 | 实时 demo (Real-time + 7 日滚动回测) | https://huggingface.co/spaces/jeffliulab/predict-power | 演示 |
 | 每日刷新的回测数据 (cron, GitHub Actions) | https://github.com/jeffliulab/new-england-real-time-power-predict-data | 数据 |
-| 工作坊论文 PDF | [docs/paper.pdf](docs/paper.pdf) | 论文 |
-| arXiv 论文源码 (LaTeX) | [report/arxiv/](report/arxiv/) | 论文源码 |
-| 实验数据 (4 个 JSON) | [report/arxiv/data/](report/arxiv/data/) | 数据 |
+| 工作坊论文 PDF (v1.6 内容) | [docs/paper.pdf](docs/paper.pdf) | 论文 |
 | Checkpoint 仓库内拷贝 | `pretrained_models/baseline/best.pt`, `space/checkpoints/best.pt` | 模型 |
 | 训练用 demand CSV (2019-2022 小时级 per-zone) | `pretrained_models/baseline/dump/demand_2019_2022_hourly.csv` | 数据 |
+| 多年漂移 sweep + drift-weighted benchmark (脚本) | `scripts/experiments/{historical_drift_sweep, drift_weighted_ensemble}.py` | 代码 |
+| Hour-of-day + load curve + paired CI + horizon 分析脚本 | `scripts/figures/render_*.py` | 代码 |
+
+论文 LaTeX 源码、中间 JSON、原始图等留在私有工作目录（公开 release 不包含论文源码，直到 arXiv 上传）。以上制品都能从本仓库 + auxiliary 数据仓库重现。
 
 ---
 
@@ -216,9 +223,7 @@ real-time-power-predict/
 ├── README.md / README_zh.md
 ├── CLAUDE.md                                # 仓库专用操作约定
 ├── docs/
-│   └── paper.pdf                            # 工作坊论文 PDF (与 report/arxiv/paper.pdf 同步)
-├── report/
-│   └── arxiv/                               # 工作坊论文 LaTeX 源 + 图 + 实验 JSON
+│   └── paper.pdf                            # 工作坊论文 PDF（公开唯一论文制品；LaTeX 源私有）
 ├── space/                                   # HF Space 源码 (push 后自动同步到 HF)
 ├── training/                                # 训练入口 + dataset 模块
 ├── inference/                               # 命令行离线推理
@@ -270,7 +275,18 @@ python scripts/build_rolling_backtest.py --output-dir /tmp/backtest --parallel 8
 
 ```bash
 python scripts/experiments/historical_drift_sweep.py
-# 每个窗口 ~75 分钟；输出 report/arxiv/data/multi_window_results.json
+# 3 个窗口（W0=2022-05、W1=2025-05、W2=2026-04/05），每个 ~75 分钟
+# （HRRR 缓存暖；HRRR 缓存空时首跑 ~3–5 小时）
+# 输出多年漂移 JSON，供论文图表使用
+```
+
+### 复现 drift-weighted 集成基准
+
+```bash
+python scripts/experiments/drift_weighted_ensemble.py
+# 需要先跑完多窗口 sweep。在每个窗口的 14 天滚动 validation 上跑 baseline+Chronos，
+# 按 0.05 步长 grid search 逐区 α，应用到测试窗口，
+# 报告 frozen / drift-weighted / oracle 三模式的 per-window MAPE。
 ```
 
 ### 复现部署管道等价性验证
@@ -293,10 +309,10 @@ python training/train.py --model cnn_transformer_baseline \
 
 ## 可复现性
 
-- **随机种子**：训练管道没设 seed，所以 5.24% / 4.33% 这些数字在重新训练时不能逐字节复现。本 README 和论文里所有数字都钉死在 `pretrained_models/baseline/best.pt` 这个 checkpoint（与 `space/checkpoints/best.pt` 等价），随 v1.5 tag 一起发布。
+- **随机种子**：训练管道没设 seed，所以 5.24% / 4.21% 这些数字在重新训练时不能逐字节复现。本 README 和论文里所有数字都钉死在 `pretrained_models/baseline/best.pt` 这个 checkpoint（与 `space/checkpoints/best.pt` 等价），随 `v1.6` tag 一起发布。
 - **Datasheet**：见工作坊论文附录 C。
 - **公开数据源**：ISO-NE Energy/Load/Demand 报告门户 + NOAA HRRR S3 镜像都是免认证公开的；实时 demo 和 cron 直接调用。
-- **数字 → 源数据可追溯**：论文每个 MAPE 数字都对应到 `report/arxiv/data/` 下的某个 JSON，由 `scripts/` 下的某个脚本生成。完整映射在 [report/arxiv/README.md](report/arxiv/README.md)。
+- **数字 → 源数据可追溯**：论文每个 MAPE 数字都对应到 `scripts/` 下某个脚本生成的 JSON。drift-weighted 方法（`scripts/experiments/drift_weighted_ensemble.py`）使用确定性 0.05 步长 grid search，输出可逐字节复现；bootstrap CI（`scripts/figures/bootstrap_mape.py`）使用固定 seed。
 
 ---
 

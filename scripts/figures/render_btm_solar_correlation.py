@@ -9,7 +9,9 @@ and plots state-level distributed PV capacity per capita against per-state
 MAPE drift (W2 - 2022).
 
 Statistical reporting: Spearman ρ + a 10000-permutation null distribution
-p-value. Not a parametric test; we have n=5 states.
+p-value. Not a parametric test; we have n=6 states. Both two-sided and
+one-sided p-values are reported; with n=6 the test is underpowered for
+confirmatory claims.
 """
 
 from __future__ import annotations
@@ -133,6 +135,11 @@ def main():
         null_rho[i], _ = spearmanr(pv, permuted)
     # Two-sided permutation p
     p_value = float(np.mean(np.abs(null_rho) >= abs(rho)))
+    # One-sided permutation p (test direction: higher BTM density -> higher drift)
+    if rho >= 0:
+        p_value_one_sided = float(np.mean(null_rho >= rho))
+    else:
+        p_value_one_sided = float(np.mean(null_rho <= rho))
 
     # Plot
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -164,7 +171,8 @@ def main():
     ax.set_axisbelow(True)
 
     # Add caveat box
-    ax.text(0.98, 0.05, "n=5 states; reported descriptively, not as hypothesis test.",
+    ax.text(0.98, 0.05,
+            f"n={len(states)} states; reported descriptively, not as hypothesis test.",
             transform=ax.transAxes, ha="right", fontsize=8, style="italic",
             bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.85,
                       edgecolor="grey", linewidth=0.5))
@@ -185,17 +193,21 @@ def main():
         "mape_drift_pp": {s: drift[s] for s in states},
         "spearman_rho": float(rho),
         "permutation_p_two_sided": p_value,
+        "permutation_p_one_sided": p_value_one_sided,
         "n_permutations": n_permutations,
         "fit_slope": float(coef[0]),
         "fit_intercept": float(coef[1]),
         "interpretation": (
             f"With n={len(states)} states, Spearman rho = {rho:+.3f}, "
-            f"two-sided permutation p = {p_value:.3f}. The result should be "
-            f"read descriptively (n=5 has very low statistical power)."
+            f"two-sided permutation p = {p_value:.3f} "
+            f"(one-sided p = {p_value_one_sided:.3f}). The result should be "
+            f"read descriptively; with n={len(states)} the test is "
+            f"underpowered for confirmatory claims."
         ),
     }, indent=2))
     print(f"Wrote {OUT_DATA}")
-    print(f"Spearman rho = {rho:+.3f}, permutation p = {p_value:.3f}, "
+    print(f"Spearman rho = {rho:+.3f}, two-sided p = {p_value:.3f}, "
+           f"one-sided p = {p_value_one_sided:.3f}, "
            f"n = {len(states)} states")
 
 

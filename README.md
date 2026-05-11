@@ -3,12 +3,13 @@
 [![en](https://img.shields.io/badge/lang-English-blue.svg)](README.md)
 [![zh](https://img.shields.io/badge/lang-中文-red.svg)](README_zh.md)
 
-<h1>ISO-NE Day-Ahead Energy Demand Forecasting</h1>
+<h1>ISO-NE Day-Ahead Demand Forecasting</h1>
+<h3>Live system + deployment-drift study + drift-weighted ensemble framework</h3>
 
 <p>
   <img src="https://img.shields.io/badge/python-3.10+-blue?logo=python&logoColor=white" alt="Python">
   <img src="https://img.shields.io/badge/PyTorch-2.5-ee4c2c?logo=pytorch&logoColor=white" alt="PyTorch">
-  <img src="https://img.shields.io/badge/release-v1.5-brightgreen" alt="v1.5">
+  <img src="https://img.shields.io/badge/release-v1.6-brightgreen" alt="v1.6">
   <a href="https://huggingface.co/spaces/jeffliulab/predict-power">
     <img src="https://img.shields.io/badge/🤗%20Live%20demo-HF%20Space-yellow" alt="Live demo">
   </a>
@@ -18,12 +19,16 @@
 </p>
 
 <p>
-  Multi-modal CNN-Transformer + Chronos-Bolt-mini zero-shot ensemble for <strong>24-hour per-zone electricity demand</strong> forecasting across the 8 ISO New England load zones. Headline test MAPE: <strong>4.33 %</strong> on the last 2 days of 2022 (baseline 5.24 % alone). Deployed publicly with a daily-refreshed 7-day rolling backtest, used as the case study for the workshop paper at <a href="docs/paper.pdf">docs/paper.pdf</a>.
+  Multi-modal CNN-Transformer + Chronos-Bolt-mini zero-shot ensemble for <strong>24-hour per-zone electricity demand</strong> forecasting across the 8 ISO New England load zones. Headline 2022 self-eval MAPE: <strong>4.21 %</strong> (baseline 5.24 % alone). Deployed publicly with a daily-refreshed 7-day rolling backtest; used as the case study for our workshop paper on deployment drift and inference-time ensemble adaptation under behind-the-meter (BTM) solar buildout — see <a href="docs/paper.pdf">docs/paper.pdf</a>.
+</p>
+
+<p>
+  <strong>v1.6 adds</strong>: three-window drift trajectory (May 2022 / 2025 / 2026), hour-of-day MAPE decomposition showing baseline failure concentrates at midday in high-BTM zones at <strong>~9× ratio</strong> over non-midday hours, duck-curve depth analysis (+17 pp WCMA shift vs +6.6 pp ME shift), and a novel <strong>drift-weighted ensemble re-weighting</strong> method that refits per-zone convex-combination weights on a 14-day rolling validation slice with no retraining.
 </p>
 
 <p>
   <strong>🌐 Live demo</strong>: <a href="https://huggingface.co/spaces/jeffliulab/predict-power">huggingface.co/spaces/jeffliulab/predict-power</a> — real ISO-NE per-zone load + real HRRR weather, refreshed daily.<br>
-  <strong>📄 Workshop paper</strong>: <a href="docs/paper.pdf">docs/paper.pdf</a> — full LaTeX source at <a href="report/arxiv/"><code>report/arxiv/</code></a>.<br>
+  <strong>📄 Workshop paper</strong>: <a href="docs/paper.pdf">docs/paper.pdf</a> (LaTeX source kept private pending arXiv submission).<br>
   <strong>📦 Auxiliary data repo</strong>: <a href="https://github.com/jeffliulab/new-england-real-time-power-predict-data">jeffliulab/new-england-real-time-power-predict-data</a> — GitHub Actions cron rebuilds the rolling backtest daily at 04:00 UTC.
 </p>
 
@@ -192,20 +197,22 @@ curl -s https://raw.githubusercontent.com/jeffliulab/new-england-real-time-power
 
 ---
 
-## v1.5 release contents
+## v1.6 release contents
 
-This is the canonical post-coursework public release. All artifacts are pinned at the `v1.5` git tag.
+v1.6 extends v1.5 with: three-window deployment-drift trajectory (May 2022 / 2025 / 2026), hour-of-day MAPE decomposition + duck-curve depth evidence for the BTM-PV mechanism, drift-weighted ensemble re-weighting method + benchmark across the 3 windows, a Related Work section grounded in the recent drift-detection + foundation-time-series literature, and five operational recommendations. All artifacts pinned at the `v1.6` git tag.
 
 | Artifact | Location | Type |
 |---|---|---|
 | Trained baseline (1.75 M params, 5.24 % test MAPE) | https://huggingface.co/jeffliulab/predict-power-baseline | model |
 | Live demo (real-time + 7-day rolling backtest) | https://huggingface.co/spaces/jeffliulab/predict-power | demo |
 | Daily-refreshed backtest data (cron, GitHub Actions) | https://github.com/jeffliulab/new-england-real-time-power-predict-data | data |
-| Workshop paper PDF | [docs/paper.pdf](docs/paper.pdf) | paper |
-| arXiv source (LaTeX) | [report/arxiv/](report/arxiv/) | paper source |
-| Experimental data (4 JSONs) | [report/arxiv/data/](report/arxiv/data/) | data |
+| Workshop paper PDF (v1.6 content) | [docs/paper.pdf](docs/paper.pdf) | paper |
 | Trained checkpoint (in-repo copy) | `pretrained_models/baseline/best.pt`, `space/checkpoints/best.pt` | model |
 | Training-CSV demand (2019-2022 hourly per-zone) | `pretrained_models/baseline/dump/demand_2019_2022_hourly.csv` | data |
+| Multi-year drift sweep + drift-weighted benchmark (scripts) | `scripts/experiments/{historical_drift_sweep, drift_weighted_ensemble}.py` | code |
+| Hour-of-day + load-curve + paired-CI + horizon analyses (scripts) | `scripts/figures/render_*.py` | code |
+
+The paper's LaTeX source, intermediate JSON data files, and raw figures are kept in a private working tree (paper source is not part of the public release until arXiv submission). The artefacts above are reproducible from this repo + the auxiliary data repo.
 
 ---
 
@@ -216,14 +223,7 @@ real-time-power-predict/
 ├── README.md / README_zh.md
 ├── CLAUDE.md                                # Repo-specific operating rules
 ├── docs/
-│   └── paper.pdf                            # Workshop paper PDF (mirror of report/arxiv/paper.pdf)
-├── report/
-│   └── arxiv/                               # Workshop paper LaTeX source + figures + experimental JSON
-│       ├── paper.tex, paper.pdf, preamble.tex, refs.bib
-│       ├── sec_*.tex (intro / setup / validation / drift / btm / discussion)
-│       ├── appendix_*.tex (A–H)
-│       ├── data/                            # Experimental outputs (multi-window, validation, BTM, forecast-shift)
-│       └── figures/                         # All paper figures
+│   └── paper.pdf                            # Workshop paper PDF (only public paper artifact; LaTeX source private)
 ├── space/                                   # HF Space source (auto-synced to HF on push)
 │   ├── app.py                               # Gradio Blocks UI: Real-time / Backtest / About tabs
 │   ├── iso_ne_zonal.py                      # ISO-NE 5-min zonal endpoint (cookie-prime)
@@ -293,7 +293,19 @@ python scripts/build_rolling_backtest.py --output-dir /tmp/backtest --parallel 8
 
 ```bash
 python scripts/experiments/historical_drift_sweep.py
-# ~75 min per window; outputs report/arxiv/data/multi_window_results.json
+# 3 windows (W0=2022-05, W1=2025-05, W2=2026-04/05), ~75 min/window
+# (HRRR cache-warm; first run ~3–5 h with empty cache).
+# Outputs the multi-year drift JSON consumed by the paper figures.
+```
+
+### Reproduce the drift-weighted ensemble benchmark
+
+```bash
+python scripts/experiments/drift_weighted_ensemble.py
+# Requires the multi-window sweep output. Runs baseline+Chronos on each
+# window's 14-day rolling validation slice, refits per-zone alpha via
+# 0.05-step grid search, applies to test windows, reports frozen /
+# drift-weighted / oracle MAPE per window.
 ```
 
 ### Reproduce the pipeline-equivalence validation
@@ -316,10 +328,10 @@ python training/train.py --model cnn_transformer_baseline \
 
 ## Reproducibility
 
-- **Random seeds**: not set in the training pipeline, so the headline 5.24 % / 4.33 % numbers are not bit-reproducible across re-training runs. The numbers in this README and the paper are pinned to the specific checkpoint at `pretrained_models/baseline/best.pt` (equivalently `space/checkpoints/best.pt`), shipped at the v1.5 tag.
+- **Random seeds**: not set in the training pipeline, so the headline 5.24 % / 4.21 % numbers are not bit-reproducible across re-training runs. The numbers in this README and the paper are pinned to the specific checkpoint at `pretrained_models/baseline/best.pt` (equivalently `space/checkpoints/best.pt`), shipped at the `v1.6` tag.
 - **Datasheet**: see Appendix C of the workshop paper.
 - **Public data sources**: ISO-NE Energy/Load/Demand reports portal + NOAA HRRR S3 mirror are both no-auth public; the live demo and the rolling-backtest cron use them directly.
-- **Numeric claims → source data**: every MAPE number in the paper traces to a JSON file in `report/arxiv/data/` produced by a script under `scripts/`. See [report/arxiv/README.md](report/arxiv/README.md) for the full mapping.
+- **Numeric claims → source data**: every MAPE number in the paper traces to a JSON file produced by a script under `scripts/`. The drift-weighted method (`scripts/experiments/drift_weighted_ensemble.py`) uses a deterministic 0.05-step grid search and is reproducible to byte-identical JSON output; the bootstrap CIs (`scripts/figures/bootstrap_mape.py`) use a fixed seed.
 
 ---
 
