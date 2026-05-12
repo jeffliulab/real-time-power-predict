@@ -48,7 +48,7 @@ docs/*
 # private working area (`本地文件/report/arxiv/`) lets the scripts keep
 # their familiar paths without leaking the private location into public
 # code. Both the symlink and any contents under report/ are gitignored.
-report/
+reports
 
 # Recovery-only scratch files (session-specific)
 本地文件
